@@ -1,7 +1,4 @@
-/* ============================================================
- 📁 FILE: src/components/ui/Select.tsx
-   → Component chọn danh sách (Select)
-============================================================ */
+
 import type { SelectHTMLAttributes } from "react";
 
 export function Select({
@@ -11,7 +8,9 @@ export function Select({
   return (
     <select
       {...props}
-      className={`px-3 py-2 border rounded-md ${props.className || ""}`}
+      className={`w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm 
+                 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 
+                 transition-shadow duration-200 ${props.className || ""}`}
     >
       {children}
     </select>
