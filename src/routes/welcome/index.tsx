@@ -146,12 +146,7 @@ const TrangChaoMung = () => {
                   </label>
                   {thongBaoLoi && <p className="thong-bao-loi">{thongBaoLoi}</p>}
                   <div className="dong-tuy-chon">
-                    <label className="tuy-chon-nho">
-                      <input type="checkbox" defaultChecked /> Ghi nhớ tôi
-                    </label>
-                    <button type="button" className="nut-phu-tro">
-                      Quên mật khẩu?
-                    </button>
+                   
                   </div>
                   <button type="submit" className="nut-dang-nhap">
                     Đăng nhập

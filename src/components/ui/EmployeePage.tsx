@@ -8,6 +8,8 @@ import { AddEmployeeModal } from "./AddEmployeeModal";
 import { EditEmployeeModal, type EmployeeEditData } from "./EditEmployeeModal";
 import { FilterBar } from "./FilterBar"; // Đảm bảo import đúng component
 import type { NewEmployeeData } from './AddEmployeeModal';
+import { EmployeeDetailModal } from "./EmployeeDetailModal";
+import { FaceRegistrationModal } from "./FaceRegistrationModal";
 
 export type Employee = {
   id: string;
@@ -18,6 +20,8 @@ export type Employee = {
   salary: number;
   status: "active" | "inactive";
   visible: boolean;
+  photo?: string;
+  faceData?: string;
 };
 
 type Toast = {
@@ -28,18 +32,31 @@ type Toast = {
 export default function EmployeePage() {
   const navigate = useNavigate();
   const seed: Employee[] = [
-    { id: "1", code: "PDT", name: "Nguyễn Minh Anh", dept: "Phòng Kinh Doanh", position: "Nhân viên", salary: 10000000, status: "active", visible: true },
-    { id: "2", code: "PCT", name: "Nguyễn Minh Tạo", dept: "Trưởng phòng", position: "Trưởng phòng", salary: 20000000, status: "active", visible: true },
-    { id: "3", code: "PKT", name: "Trần Quỳnh", dept: "Chăm sóc KH", position: "Nhân viên", salary: 12000000, status: "inactive", visible: true },
+    { id: "1", code: "PDT", name: "Nguyễn Minh Anh", dept: "Phòng Kinh Doanh", position: "Nhân viên", salary: 10000000, status: "active", visible: true, photo: "https://i.pravatar.cc/150?img=3" },
+    { id: "2", code: "PCT", name: "Nguyễn Minh Tạo", dept: "Trưởng phòng", position: "Trưởng phòng", salary: 20000000, status: "active", visible: true, photo: "https://i.pravatar.cc/150?img=15" },
+    { id: "3", code: "PKT", name: "Trần Quỳnh", dept: "Chăm sóc KH", position: "Nhân viên", salary: 12000000, status: "inactive", visible: true, photo: "https://i.pravatar.cc/150?img=32" },
   ];
 
-  const [data, setData] = useState<Employee[]>(seed);
+  const [data, setData] = useState<Employee[]>(() => {
+    const stored = localStorage.getItem("employeesData");
+    if (stored) {
+      try {
+        return JSON.parse(stored) as Employee[];
+      } catch (error) {
+        console.warn("Không đọc được employeesData:", error);
+      }
+    }
+    localStorage.setItem("employeesData", JSON.stringify(seed));
+    return seed;
+  });
   const [q, setQ] = useState("");
   const [dept, setDept] = useState("all");
   const [status, setStatus] = useState("all");
   const [openAdd, setOpenAdd] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
+  const [detailEmployee, setDetailEmployee] = useState<Employee | null>(null);
+  const [faceEmployee, setFaceEmployee] = useState<Employee | null>(null);
 
   const filtered = useMemo(() => {
     return data.filter((d) => {
@@ -72,7 +89,11 @@ export default function EmployeePage() {
       code: finalCode,
       visible: true 
     };
-    setData((s) => [newEmployee, ...s]);
+    setData((s) => {
+      const next = [newEmployee, ...s];
+      localStorage.setItem("employeesData", JSON.stringify(next));
+      return next;
+    });
     showToast("Đã thêm nhân viên");
     setOpenAdd(false);
   };
@@ -80,7 +101,13 @@ export default function EmployeePage() {
   const updateEmployee = (updatedData: EmployeeEditData) => {
     if (!editingEmployee) return;
     
-    setData(s => s.map(emp => emp.id === editingEmployee.id ? { ...emp, ...updatedData } : emp));
+    setData((s) => {
+      const next = s.map((emp) =>
+        emp.id === editingEmployee.id ? { ...emp, ...updatedData } : emp
+      );
+      localStorage.setItem("employeesData", JSON.stringify(next));
+      return next;
+    });
     showToast("Đã cập nhật nhân viên");
     setEditingEmployee(null);
   };
@@ -88,7 +115,11 @@ export default function EmployeePage() {
   const deleteEmployee = (id: string) => {
     const confirmed = window.confirm("Bạn có chắc chắn muốn xoá nhân viên này?");
     if (confirmed) {
-      setData((s) => s.filter((emp) => emp.id !== id));
+      setData((s) => {
+        const next = s.filter((emp) => emp.id !== id);
+        localStorage.setItem("employeesData", JSON.stringify(next));
+        return next;
+      });
       showToast("Đã xóa nhân viên");
     }
   };
@@ -102,17 +133,64 @@ export default function EmployeePage() {
   };
 
   const toggleVisibility = (id: string) => {
-    setData((s) =>
-      s.map((emp) => (emp.id === id ? { ...emp, visible: !emp.visible } : emp))
-    );
+    setData((s) => {
+      const next = s.map((emp) =>
+        emp.id === id ? { ...emp, visible: !emp.visible } : emp
+      );
+      localStorage.setItem("employeesData", JSON.stringify(next));
+      return next;
+    });
   };
 
   const handleEdit = (employee: Employee) => {
     setEditingEmployee(employee);
   };
 
-  const handleRegisterFace = (employeeId: string) => {
-    navigate(`/attendance?id=${employeeId}`);
+  const handleRegisterFace = (employee: Employee) => {
+    setFaceEmployee(employee);
+  };
+
+  const handleViewDetail = (employee: Employee) => {
+    setDetailEmployee(employee);
+  };
+
+  const handleViewPayroll = (employee: Employee) => {
+    const workingHours = localStorage.getItem(`workingHours:${employee.id}`);
+    let monthlyHours = "0";
+
+    if (workingHours) {
+      try {
+        const parsed = JSON.parse(workingHours) as {
+          year: number;
+          month: number;
+          hours: number;
+        };
+        const now = new Date();
+        const currentMonth = now.getMonth() + 1;
+        const currentYear = now.getFullYear();
+        if (
+          parsed &&
+          parsed.year === currentYear &&
+          parsed.month === currentMonth &&
+          typeof parsed.hours === "number"
+        ) {
+          monthlyHours = String(parsed.hours);
+        }
+      } catch (error) {
+        console.warn("Không đọc được dữ liệu workingHours:", error);
+      }
+    }
+
+    const query = new URLSearchParams({
+      employeeId: employee.id,
+      code: employee.code,
+      name: employee.name,
+      dept: employee.dept,
+      position: employee.position,
+      salary: String(employee.salary),
+      hours: monthlyHours,
+    });
+    navigate(`/admin/payroll?${query.toString()}`);
   };
 
   return (
@@ -129,7 +207,15 @@ export default function EmployeePage() {
           status={status} onStatusChange={setStatus}
         />
 
-        <EmployeeTable data={filtered} onDelete={deleteEmployee} onToggleVisibility={toggleVisibility} onEdit={handleEdit} onRegisterFace={handleRegisterFace} />
+        <EmployeeTable
+          data={filtered}
+          onDelete={deleteEmployee}
+          onToggleVisibility={toggleVisibility}
+          onEdit={handleEdit}
+          onRegisterFace={handleRegisterFace}
+          onViewPayroll={handleViewPayroll}
+          onViewDetail={handleViewDetail}
+        />
 
         <div className="fixed bottom-4 right-4 space-y-2 z-50">
           {toasts.map((toast) => (
@@ -154,6 +240,40 @@ export default function EmployeePage() {
           onClose={() => setEditingEmployee(null)}
           employee={editingEmployee}
           onSave={updateEmployee}
+        />
+
+        <EmployeeDetailModal
+          open={!!detailEmployee}
+          onClose={() => setDetailEmployee(null)}
+          employee={detailEmployee}
+        />
+
+        <FaceRegistrationModal
+          open={!!faceEmployee}
+          onClose={() => setFaceEmployee(null)}
+          employee={faceEmployee}
+          onSaved={() => {
+            showToast("Đã lưu khuôn mặt nhân viên");
+            setFaceEmployee(null);
+          }}
+          onCapture={(image) => {
+            if (!faceEmployee) return;
+            setData((current) => {
+              const next = current.map((emp) =>
+                emp.id === faceEmployee.id ? { ...emp, faceData: image } : emp
+              );
+              localStorage.setItem("employeesData", JSON.stringify(next));
+              return next;
+            });
+            localStorage.setItem(`faceData:${faceEmployee.id}`, image);
+          }}
+          onRetake={() => {
+            if (!faceEmployee) return;
+            setData((current) => current.map((emp) =>
+              emp.id === faceEmployee.id ? { ...emp, faceData: undefined } : emp
+            ));
+            localStorage.removeItem(`faceData:${faceEmployee.id}`);
+          }}
         />
 
       </div>

@@ -12,6 +12,7 @@ export type NewEmployeeData = {
   position: string;
   salary: number;
   status: "active" | "inactive";
+  photo?: string;
 };
 
 export function AddEmployeeModal({
@@ -32,7 +33,9 @@ export function AddEmployeeModal({
     position: 'Nhân viên',
     salary: 0,
     status: 'active',
+    photo: '',
   });
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
 
   useEffect(() => {
     if (open) {
@@ -43,13 +46,28 @@ export function AddEmployeeModal({
         position: 'Nhân viên',
         salary: 0,
         status: 'active',
+        photo: '',
       });
+      setPhotoPreview(null);
     }
   }, [open]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: name === 'salary' ? parseFloat(value) || 0 : value }));
+  };
+
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      setFormData(prev => ({ ...prev, photo: result }));
+      setPhotoPreview(result);
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleSubmit = (e: FormEvent) => {
@@ -90,6 +108,28 @@ export function AddEmployeeModal({
             <option value="active">Hoạt động</option>
             <option value="inactive">Ngưng</option>
           </Select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium mb-1">Ảnh nhân viên</label>
+          <input
+            type="file"
+            accept="image/*"
+            onChange={handlePhotoUpload}
+            className="block w-full text-sm text-gray-700 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-600 hover:file:bg-blue-100"
+          />
+          <div className="mt-3">
+            {photoPreview ? (
+              <img
+                src={photoPreview}
+                alt="Xem trước"
+                className="w-24 h-24 rounded-xl object-cover border border-gray-200 shadow-sm"
+              />
+            ) : (
+              <p className="text-xs text-gray-500">
+                Chưa chọn ảnh. Bạn có thể upload file JPG/PNG dưới 5MB.
+              </p>
+            )}
+          </div>
         </div>
         <div className="flex justify-end gap-2 pt-4">
           <Button variant="ghost" type="button" onClick={onClose}>

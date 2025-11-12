@@ -253,19 +253,19 @@
   }
 
   .phan-chao-dang-nhap {
-    @apply hidden w-1/2 flex-col justify-between bg-slate-900 p-10 text-white lg:flex;
+    @apply hidden w-1/2 flex-col justify-between bg-white p-10 text-slate-900 lg:flex border-r border-slate-100;
   }
 
   .tieu-de-dang-nhap {
-    @apply text-2xl font-bold;
+    @apply text-2xl font-bold text-slate-900;
   }
 
   .mo-ta-dang-nhap {
-    @apply mt-4 text-sm text-slate-200;
+    @apply mt-4 text-sm text-slate-600;
   }
 
   .anh-dang-nhap {
-    @apply mt-6 rounded-2xl bg-white/10 p-4;
+    @apply mt-6 rounded-2xl border border-slate-200 p-4 bg-white shadow-sm;
   }
 
   .cot-dang-nhap {

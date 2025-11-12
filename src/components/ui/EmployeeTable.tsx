@@ -16,12 +16,16 @@ export function EmployeeTable({
   onEdit,
   onToggleVisibility,
   onRegisterFace,
+  onViewPayroll,
+  onViewDetail,
 }: {
   data: EmployeeTableProps[];
   onDelete: (id: string) => void;
   onEdit?: (employee: EmployeeTableProps) => void; // Optional now
   onToggleVisibility: (id: string) => void;
-  onRegisterFace: (id: string) => void;
+  onRegisterFace: (employee: EmployeeTableProps) => void;
+  onViewPayroll?: (employee: EmployeeTableProps) => void;
+  onViewDetail?: (employee: EmployeeTableProps) => void;
 }) {
   return (
     <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-x-auto">
@@ -55,7 +59,15 @@ export function EmployeeTable({
                 <td className="px-4 py-3 text-black">{d.name}</td>
                 <td className="px-4 py-3 text-black">{d.dept}</td>
                 <td className="px-4 py-3 text-black">{d.position}</td>
-                <td className="px-4 py-3 text-black">{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(d.salary)}</td>
+                <td className="px-4 py-3">
+                  <button
+                    type="button"
+                    onClick={() => onViewPayroll && onViewPayroll(d)}
+                    className="px-3 py-1 text-sm font-semibold text-blue-600 bg-blue-50 border border-blue-200 rounded-full hover:bg-blue-100 transition-colors"
+                  >
+                    Lương
+                  </button>
+                </td>
                 <td className="px-4 py-3 whitespace-nowrap">
                   <span
                     className={`px-2 py-1 rounded-full text-xs ${
@@ -72,16 +84,16 @@ export function EmployeeTable({
                     title="Sửa"
                     onClick={() => onEdit && onEdit(d)} className="text-blue-500 hover:text-blue-800">✏️</button>
                   <button
-                    title={d.visible ? "Ẩn" : "Hiện"}
+                    title="Xem thông tin"
                     className="text-gray-500 hover:text-gray-800"
-                    onClick={() => onToggleVisibility(d.id)}
+                    onClick={() => onViewDetail && onViewDetail(d)}
                   >
-                    {d.visible ? '👁️' : '👁️‍🗨️'}
+                    👁️
                   </button>
                   <button title="Xoá" onClick={() => onDelete(d.id)} className="text-red-500 hover:text-red-800">❌</button>
                   <button
                     title="Đăng ký khuôn mặt"
-                    onClick={() => onRegisterFace(d.id)} className="text-green-500 hover:text-green-800">👤</button>
+                    onClick={() => onRegisterFace(d)} className="text-green-500 hover:text-green-800">👤</button>
                 </td>
 
             </tr>

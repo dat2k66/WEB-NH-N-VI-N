@@ -9,6 +9,7 @@ const DepartmentPage = lazy(() => import("../components/ui/DepartmentPage"));
 const PositionPage = lazy(() => import("../components/ui/PositionPage"));
 const IncomeReportPage = lazy(() => import("../components/ui/IncomeReportPage"));
 const FaceAttendancePage = lazy(() => import("../routes/attendance/FaceAttendancePage"));
+const PayrollPage = lazy(() => import("../routes/admin/payroll"));
 
 import DangPhatTrien from "../components/ui/DangPhatTrien";
 
@@ -41,6 +42,10 @@ const router = createBrowserRouter([
       {
         path: "reports/income",
         element: <IncomeReportPage />,
+      },
+      {
+        path: "payroll",
+        element: <PayrollPage />,
       },
     ],
   },
