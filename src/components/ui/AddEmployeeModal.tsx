@@ -28,7 +28,7 @@ export function AddEmployeeModal({
   const [formData, setFormData] = useState<NewEmployeeData>({
     name: '',
     code: '',
-    dept: 'Phòng Kinh Doanh',
+    dept: '',
     position: 'Nhân viên',
     salary: 0,
     status: 'active',
@@ -38,14 +38,14 @@ export function AddEmployeeModal({
     if (open) {
       setFormData({
         name: '',
-        code: generatedCode,
-        dept: 'Phòng Kinh Doanh',
+        code: '',
+        dept: '',
         position: 'Nhân viên',
         salary: 0,
         status: 'active',
       });
     }
-  }, [open, generatedCode]);
+  }, [open]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -66,7 +66,7 @@ export function AddEmployeeModal({
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label className="block text-sm font-medium mb-1">Mã NV</label>
-          <Input name="code" value={formData.code} onChange={handleChange} placeholder="Mã nhân viên" required />
+          <Input name="code" value={formData.code} onChange={handleChange} placeholder={generatedCode} />
         </div>
         <div>
           <label className="block text-sm font-medium mb-1">Họ và tên</label>
@@ -74,7 +74,7 @@ export function AddEmployeeModal({
         </div>
         <div>
           <label className="block text-sm font-medium mb-1">Phòng ban</label>
-          <Input name="dept" value={formData.dept} onChange={handleChange} placeholder="VD: Phòng Kinh Doanh" required />
+          <Input name="dept" value={formData.dept} onChange={handleChange} placeholder="VD: Phòng Kinh Doanh" />
         </div>
         <div>
           <label className="block text-sm font-medium mb-1">Chức vụ</label>

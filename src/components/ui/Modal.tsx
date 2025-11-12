@@ -1,7 +1,3 @@
-/* ============================================================
- 📁 FILE: src/components/ui/Modal.tsx
-   → Component hiển thị popup thêm nhân viên
-============================================================ */
 import type { ReactNode } from "react";
 
 export function Modal({

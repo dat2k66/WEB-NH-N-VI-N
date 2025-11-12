@@ -1,15 +1,13 @@
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import FaceAttendanceShell from './components/FaceAttendanceShell';
 import './attendance.css';
 
-const nhanVienDemo = {
-  hoTen: 'Nguyễn Minh Anh',
-  maNhanVien: 'HRP-2025-0089',
-  boPhan: 'Nhân sự',
-  chucVu: 'HR Manager',
-  caLam: '09:00 - 18:00',
-};
+const employeesData = [
+  { id: "1", code: "PDT", name: "Nguyễn Minh Anh", dept: "Phòng Kinh Doanh", position: "Nhân viên", salary: 10000000, status: "active", visible: true },
+  { id: "2", code: "PCT", name: "Nguyễn Minh Tạo", dept: "Trưởng phòng", position: "Trưởng phòng", salary: 20000000, status: "active", visible: true },
+  { id: "3", code: "PKT", name: "Trần Quỳnh", dept: "Chăm sóc KH", position: "Nhân viên", salary: 12000000, status: "inactive", visible: true },
+];
 
 const dinhDangThoiGian = () =>
   new Intl.DateTimeFormat('vi-VN', {
@@ -19,10 +17,24 @@ const dinhDangThoiGian = () =>
   }).format(new Date());
 
 const FaceAttendancePage = () => {
+  const [searchParams] = useSearchParams();
+  const [employee, setEmployee] = useState<any>(null);
   const [thongBao, setThongBao] = useState<string | null>(null);
   const [loaiThongBao, setLoaiThongBao] = useState<'in' | 'out' | null>(null);
 
+  useEffect(() => {
+    const employeeId = searchParams.get('id');
+    if (employeeId) {
+      const foundEmployee = employeesData.find(emp => emp.id === employeeId);
+      setEmployee(foundEmployee || null);
+    }
+  }, [searchParams]);
+
   const xuLyChamCong = (kieu: 'in' | 'out') => {
+    if (!employee) {
+      setThongBao("Chưa chọn nhân viên để chấm công.");
+      return;
+    }
     const noiDung =
       kieu === 'in'
         ? `Check-in thành công lúc ${dinhDangThoiGian()}`
@@ -66,31 +78,37 @@ const FaceAttendancePage = () => {
           </div>
 
           <div className="thong-tin-nhan-vien">
-            <div>
-              <p className="nhan-nho">Thông tin nhân viên</p>
-              <h2 className="ten-nhan-vien">{nhanVienDemo.hoTen}</h2>
-              <p className="chuc-vu">{nhanVienDemo.chucVu}</p>
-            </div>
-            <dl className="bang-thong-tin">
-              <div>
-                <dt>Mã nhân viên</dt>
-                <dd>{nhanVienDemo.maNhanVien}</dd>
-              </div>
-              <div>
-                <dt>Bộ phận</dt>
-                <dd>{nhanVienDemo.boPhan}</dd>
-              </div>
-              <div>
-                <dt>Ca làm</dt>
-                <dd>{nhanVienDemo.caLam}</dd>
-              </div>
-              <div>
-                <dt>Trạng thái</dt>
-                <dd className={loaiThongBao === 'out' ? 'trang-thai-xam' : 'trang-thai-xanh'}>
-                  {loaiThongBao === 'out' ? 'Đã check-out' : 'Đang làm việc'}
-                </dd>
-              </div>
-            </dl>
+            {employee ? (
+              <>
+                <div>
+                  <p className="nhan-nho">Thông tin nhân viên</p>
+                  <h2 className="ten-nhan-vien">{employee.name}</h2>
+                  <p className="chuc-vu">{employee.position}</p>
+                </div>
+                <dl className="bang-thong-tin">
+                  <div>
+                    <dt>Mã nhân viên</dt>
+                    <dd>{employee.code}</dd>
+                  </div>
+                  <div>
+                    <dt>Bộ phận</dt>
+                    <dd>{employee.dept}</dd>
+                  </div>
+                  <div>
+                    <dt>Ca làm</dt>
+                    <dd>09:00 - 18:00</dd>
+                  </div>
+                  <div>
+                    <dt>Trạng thái</dt>
+                    <dd className={loaiThongBao === 'out' ? 'trang-thai-xam' : 'trang-thai-xanh'}>
+                      {loaiThongBao === 'out' ? 'Đã check-out' : 'Đang làm việc'}
+                    </dd>
+                  </div>
+                </dl>
+              </>
+            ) : (
+              <p>Không tìm thấy thông tin nhân viên. Vui lòng quay lại và chọn một nhân viên.</p>
+            )}
           </div>
         </section>
 

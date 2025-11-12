@@ -1,0 +1,69 @@
+export type PositionTableProps = {
+    id: string;
+    maChucVu: string;
+    tenChucVu: string;
+    trangThai: "active" | "inactive";
+    visible: boolean;
+};
+
+export function PositionTable({
+  data,
+  onDelete,
+  onEdit,
+  onToggleVisibility,
+}: {
+  data: PositionTableProps[];
+  onDelete: (id: string) => void;
+  onEdit?: (position: PositionTableProps) => void;
+  onToggleVisibility: (id: string) => void;
+}) {
+  return (
+    <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-x-auto">
+      <table className="min-w-full text-left">
+        <thead className="bg-gray-50 border-b border-gray-200">
+          <tr>
+            <th className="px-4 py-3 text-sm text-black">Mã chức vụ</th>
+            <th className="px-4 py-3 text-sm text-black">Tên chức vụ</th>
+            <th className="px-4 py-3 text-sm text-black">Trạng thái</th>
+            <th className="px-4 py-3 text-sm text-black">Hành động</th>
+          </tr>
+        </thead>
+        <tbody>
+          {data.length === 0 && (
+            <tr>
+              <td colSpan={4} className="p-6 text-center text-sm text-gray-500">Không có dữ liệu</td>
+            </tr>
+          )}
+          {data.map((d) => (
+            <tr key={d.id} className="border-t border-gray-200 hover:bg-gray-50" style={{ display: d.visible ? '' : 'none' }}>
+                <td className="px-4 py-3 text-black">{d.maChucVu}</td>
+                <td className="px-4 py-3 text-black">{d.tenChucVu}</td>
+                <td className="px-4 py-3 whitespace-nowrap">
+                  <span
+                    className={`px-2 py-1 rounded-full text-xs ${
+                      d.trangThai === "active"
+                        ? "bg-green-100 text-green-800"
+                        : "bg-gray-100 text-gray-800"
+                    }`}
+                  >
+                    {d.trangThai === "active" ? "Hoạt động" : "Ngưng"}
+                  </span>
+                </td>
+                <td className="px-4 py-3 space-x-4 whitespace-nowrap">
+                  <button title="Sửa" onClick={() => onEdit && onEdit(d)} className="text-blue-500 hover:text-blue-800">✏️</button>
+                  <button
+                    title={d.visible ? "Ẩn" : "Hiện"}
+                    className="text-gray-500 hover:text-gray-800"
+                    onClick={() => onToggleVisibility(d.id)}
+                  >
+                    {d.visible ? '👁️' : '👁️‍🗨️'}
+                  </button>
+                  <button title="Xoá" onClick={() => onDelete(d.id)} className="text-red-500 hover:text-red-800">❌</button>
+                </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}

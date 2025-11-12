@@ -1,7 +1,3 @@
-/* ============================================================
- 📁 FILE: src/components/ui/Button.tsx
-   → Component nút bấm (Button)
-============================================================ */
 import type { ButtonHTMLAttributes } from "react";
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {

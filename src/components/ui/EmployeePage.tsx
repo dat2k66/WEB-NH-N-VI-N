@@ -6,7 +6,7 @@ import { Button } from "./Button";
 import { EmployeeTable } from "./EmployeeTable";
 import { AddEmployeeModal } from "./AddEmployeeModal";
 import { EditEmployeeModal, type EmployeeEditData } from "./EditEmployeeModal";
-import { FilterBar } from "./FilterBar";
+import { FilterBar } from "./FilterBar"; // Đảm bảo import đúng component
 import type { NewEmployeeData } from './AddEmployeeModal';
 
 export type Employee = {
@@ -65,11 +65,11 @@ export default function EmployeePage() {
   };
 
   const addEmployee = (emp: NewEmployeeData) => {
-    const newCode = generateEmployeeCode(emp.dept, emp.position, data);
+    const finalCode = emp.code || generateEmployeeCode(emp.dept, emp.position, data);
     const newEmployee: Employee = { 
       ...emp, 
       id: uuidv4(), 
-      code: newCode,
+      code: finalCode,
       visible: true 
     };
     setData((s) => [newEmployee, ...s]);
@@ -112,8 +112,7 @@ export default function EmployeePage() {
   };
 
   const handleRegisterFace = (employeeId: string) => {
-    // Logic to navigate to face registration page for the specific employee
-    navigate(`/attendance?employeeId=${employeeId}`);
+    navigate(`/attendance?id=${employeeId}`);
   };
 
   return (
@@ -124,17 +123,14 @@ export default function EmployeePage() {
           <Button onClick={() => setOpenAdd(true)}>+ Thêm nhân viên</Button>
         </div>
 
-        {/* Filters */}
         <FilterBar 
           q={q} onQueryChange={setQ}
           dept={dept} onDeptChange={setDept}
           status={status} onStatusChange={setStatus}
         />
 
-        {/* Content */}
         <EmployeeTable data={filtered} onDelete={deleteEmployee} onToggleVisibility={toggleVisibility} onEdit={handleEdit} onRegisterFace={handleRegisterFace} />
 
-        {/* Toast */}
         <div className="fixed bottom-4 right-4 space-y-2 z-50">
           {toasts.map((toast) => (
             <div
@@ -146,15 +142,13 @@ export default function EmployeePage() {
           ))}
         </div>
 
-        {/* Add Modal */}
         <AddEmployeeModal
           open={openAdd}
           onClose={() => setOpenAdd(false)}
           onSave={addEmployee}
-          generatedCode={"Mã sẽ được tạo tự động"}
+          generatedCode={"Nhập mã hoặc để trống để tạo tự động"}
         />
 
-        {/* Edit Modal */}
         <EditEmployeeModal
           open={!!editingEmployee}
           onClose={() => setEditingEmployee(null)}
