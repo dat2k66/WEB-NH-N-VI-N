@@ -83,6 +83,18 @@ export function EmployeeDetailModal({
               {formatMoney(employee.salary)}
             </span>
           </div>
+          <div className="flex justify-between">
+            <span className="text-gray-500">Tài khoản</span>
+            <span className="font-medium text-gray-900">
+              {employee.taiKhoan || "Chưa thiết lập"}
+            </span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-500">Mật khẩu</span>
+            <span className="font-medium text-gray-900">
+              {employee.matKhau || "Chưa thiết lập"}
+            </span>
+          </div>
         </div>
       </div>
     </Modal>

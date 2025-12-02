@@ -1,10 +1,13 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { v4 as uuidv4 } from 'uuid';
 import { Button } from "./Button";
 import { DepartmentTable } from "./DepartmentTable";
 import { AddDepartmentModal, type NewDepartmentData } from "./AddDepartmentModal";
 import { EditDepartmentModal, type DepartmentEditData } from "./EditDepartmentModal";
 import { Input } from "./Input";
+import type { Employee } from "./EmployeePage";
+import { EmployeesListModal } from "./EmployeesListModal";
+import { generateDepartmentCode } from "../../utils/employeeCode";
 
 export type Department = {
   id: string;
@@ -15,81 +18,179 @@ export type Department = {
   visible: boolean;
 };
 
-type Toast = {
+type ThongBao = {
   id: string;
-  message: string;
+  noiDung: string;
 };
 
 export default function DepartmentPage() {
-  const seed: Department[] = [
+  const duLieuKhoiTao: Department[] = [
     { id: "1", maPhong: "PKD", tenPhong: "Phòng Kinh Doanh", namThanhLap: 2020, trangThai: "active", visible: true },
     { id: "2", maPhong: "PNS", tenPhong: "Phòng Nhân Sự", namThanhLap: 2019, trangThai: "active", visible: true },
     { id: "3", maPhong: "PKT", tenPhong: "Phòng Kế Toán", namThanhLap: 2018, trangThai: "inactive", visible: true },
   ];
 
-  const [data, setData] = useState<Department[]>(seed);
-  const [q, setQ] = useState("");
-  const [openAdd, setOpenAdd] = useState(false);
-  const [toasts, setToasts] = useState<Toast[]>([]);
-  const [editingDepartment, setEditingDepartment] = useState<Department | null>(null);
+  const [danhSachPhongBan, capNhatDanhSachPhongBan] = useState<Department[]>(() => {
+    const duLieuLuuTru = localStorage.getItem("departmentsData");
+    if (duLieuLuuTru) {
+      try {
+        return JSON.parse(duLieuLuuTru) as Department[];
+      } catch (error) {
+        console.warn("Không đọc được departmentsData:", error);
+      }
+    }
+    localStorage.setItem("departmentsData", JSON.stringify(duLieuKhoiTao));
+    return duLieuKhoiTao;
+  });
+  const [tuKhoa, capNhatTuKhoa] = useState("");
+  const [moThemPhongBan, datMoThemPhongBan] = useState(false);
+  const [danhSachThongBao, capNhatThongBao] = useState<ThongBao[]>([]);
+  const [phongDangSua, capNhatPhongDangSua] = useState<Department | null>(null);
+  const [trangHienTai, capNhatTrangHienTai] = useState(1);
+  const [soNhanSuTheoPhong, capNhatSoNhanSuTheoPhong] = useState<Record<string, number>>({});
+  const [moCuaSoNhanSu, datMoCuaSoNhanSu] = useState(false);
+  const [nhanSuPhongChon, capNhatNhanSuPhongChon] = useState<Employee[]>([]);
+  const [phongDuocChon, capNhatPhongDuocChon] = useState<Department | null>(null);
+  const SO_MUC_MOI_TRANG = 4;
 
-  const filtered = useMemo(() => {
-    return data.filter((d) => {
-      if (q && !(d.tenPhong.toLowerCase().includes(q.toLowerCase()) || d.maPhong.toLowerCase().includes(q.toLowerCase())))
+  useEffect(() => {
+    const dongBoNhanSuTheoPhong = () => {
+      try {
+        const raw = localStorage.getItem("employeesData");
+        if (!raw) {
+          capNhatSoNhanSuTheoPhong({});
+          return;
+        }
+        const employees = JSON.parse(raw) as { dept: string }[];
+        const counts = employees.reduce<Record<string, number>>((acc, emp) => {
+          acc[emp.dept] = (acc[emp.dept] || 0) + 1;
+          return acc;
+        }, {});
+        capNhatSoNhanSuTheoPhong(counts);
+      } catch (error) {
+        console.warn("Không đọc được employeesData:", error);
+        capNhatSoNhanSuTheoPhong({});
+      }
+    };
+
+    dongBoNhanSuTheoPhong();
+    window.addEventListener("storage", dongBoNhanSuTheoPhong);
+    window.addEventListener("focus", dongBoNhanSuTheoPhong);
+    return () => {
+      window.removeEventListener("storage", dongBoNhanSuTheoPhong);
+      window.removeEventListener("focus", dongBoNhanSuTheoPhong);
+    };
+  }, []);
+
+  const danhSachDaLoc = useMemo(() => {
+    const ketQua = danhSachPhongBan.filter((phong) => {
+      if (
+        tuKhoa &&
+        !(
+          phong.tenPhong.toLowerCase().includes(tuKhoa.toLowerCase()) ||
+          phong.maPhong.toLowerCase().includes(tuKhoa.toLowerCase())
+        )
+      )
         return false;
       return true;
     });
-  }, [data, q]);
+    const tongTrang = Math.max(1, Math.ceil(ketQua.length / SO_MUC_MOI_TRANG));
+    if (trangHienTai > tongTrang) {
+      capNhatTrangHienTai(tongTrang);
+    }
+    return ketQua;
+  }, [danhSachPhongBan, tuKhoa, trangHienTai]);
 
-  const generateDeptCode = (name: string) => {
-    return name.split(' ').map(word => word.charAt(0)).join('').toUpperCase().slice(0, 3);
-  }
+  const taoMaPhongBan = (tenPhong: string) => {
+    return generateDepartmentCode(tenPhong);
+  };
 
-  const addDepartment = (dept: NewDepartmentData) => {
-    const finalCode = dept.maPhong || generateDeptCode(dept.tenPhong);
-    const newDepartment: Department = {
-      ...dept,
+  const themPhongBan = (phongMoi: NewDepartmentData) => {
+    const maPhong = phongMoi.maPhong || taoMaPhongBan(phongMoi.tenPhong);
+    const phongBan = {
+      ...phongMoi,
       id: uuidv4(),
-      maPhong: finalCode,
-      visible: true
+      maPhong,
+      visible: true,
     };
-    setData((s) => [newDepartment, ...s]);
-    showToast("Đã thêm phòng ban");
-    setOpenAdd(false);
+    capNhatDanhSachPhongBan((dsCu) => {
+      const danhSachMoi = [phongBan, ...dsCu];
+      localStorage.setItem("departmentsData", JSON.stringify(danhSachMoi));
+      return danhSachMoi;
+    });
+    hienThongBao("Đã thêm phòng ban");
+    datMoThemPhongBan(false);
   };
 
-  const updateDepartment = (updatedData: DepartmentEditData) => {
-    if (!editingDepartment) return;
-
-    setData(s => s.map(dept => dept.id === editingDepartment.id ? { ...dept, ...updatedData } : dept));
-    showToast("Đã cập nhật phòng ban");
-    setEditingDepartment(null);
+  const capNhatPhongBan = (duLieuMoi: DepartmentEditData) => {
+    if (!phongDangSua) return;
+    capNhatDanhSachPhongBan((dsCu) => {
+      const danhSachMoi = dsCu.map((phong) =>
+        phong.id === phongDangSua.id ? { ...phong, ...duLieuMoi } : phong
+      );
+      localStorage.setItem("departmentsData", JSON.stringify(danhSachMoi));
+      return danhSachMoi;
+    });
+    hienThongBao("Đã cập nhật phòng ban");
+    capNhatPhongDangSua(null);
   };
 
-  const deleteDepartment = (id: string) => {
-    const confirmed = window.confirm("Bạn có chắc chắn muốn xoá phòng ban này?");
-    if (confirmed) {
-      setData((s) => s.filter((dept) => dept.id !== id));
-      showToast("Đã xóa phòng ban");
+  const xoaPhongBan = (id: string) => {
+    const xacNhan = window.confirm("Bạn có chắc chắn muốn xoá phòng ban này?");
+    if (xacNhan) {
+      capNhatDanhSachPhongBan((dsCu) => {
+        const danhSachMoi = dsCu.filter((phong) => phong.id !== id);
+        localStorage.setItem("departmentsData", JSON.stringify(danhSachMoi));
+        return danhSachMoi;
+      });
+      hienThongBao("Đã xóa phòng ban");
     }
   };
 
-  const showToast = (message: string) => {
-    const toastId = uuidv4();
-    setToasts((prevToasts) => [...prevToasts, { id: toastId, message }]);
+  const hienThongBao = (noiDung: string) => {
+    const idThongBao = uuidv4();
+    capNhatThongBao((dsCu) => [...dsCu, { id: idThongBao, noiDung }]);
     setTimeout(() => {
-      setToasts((prevToasts) => prevToasts.filter((toast) => toast.id !== toastId));
+      capNhatThongBao((dsCu) => dsCu.filter((tb) => tb.id !== idThongBao));
     }, 3000);
   };
 
-  const toggleVisibility = (id: string) => {
-    setData((s) =>
-      s.map((dept) => (dept.id === id ? { ...dept, visible: !dept.visible } : dept))
-    );
+  const daoTrangThaiHienThi = (id: string) => {
+    capNhatDanhSachPhongBan((dsCu) => {
+      const danhSachMoi = dsCu.map((phong) =>
+        phong.id === id ? { ...phong, visible: !phong.visible } : phong
+      );
+      localStorage.setItem("departmentsData", JSON.stringify(danhSachMoi));
+      return danhSachMoi;
+    });
   };
 
-  const handleEdit = (department: Department) => {
-    setEditingDepartment(department);
+  const chonPhongBanSua = (phong: Department) => {
+    capNhatPhongDangSua(phong);
+  };
+
+  const xemNhanSuPhong = (phong: Department) => {
+    capNhatPhongDuocChon(phong);
+    try {
+      const duLieuNhanVien = localStorage.getItem("employeesData");
+      if (!duLieuNhanVien) {
+        capNhatNhanSuPhongChon([]);
+      } else {
+        const nhanVien = JSON.parse(duLieuNhanVien) as Employee[];
+        const nhanSuTheoPhong = nhanVien.filter((nv) => nv.dept === phong.tenPhong);
+        capNhatNhanSuPhongChon(nhanSuTheoPhong);
+      }
+    } catch (error) {
+      console.warn("Không đọc được employeesData:", error);
+      capNhatNhanSuPhongChon([]);
+    }
+    datMoCuaSoNhanSu(true);
+  };
+
+  const dongCuaSoNhanSu = () => {
+    datMoCuaSoNhanSu(false);
+    capNhatNhanSuPhongChon([]);
+    capNhatPhongDuocChon(null);
   };
 
   return (
@@ -97,44 +198,77 @@ export default function DepartmentPage() {
       <div className="max-w-7xl mx-auto">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-3xl font-bold tracking-tight text-gray-900">Phòng ban</h1>
-          <Button onClick={() => setOpenAdd(true)}>+ Thêm phòng ban</Button>
+          <Button onClick={() => datMoThemPhongBan(true)}>+ Thêm phòng ban</Button>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
             <div className="md:col-span-2">
                 <Input
                 placeholder="Tìm theo tên, mã phòng..."
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
+                value={tuKhoa}
+                onChange={(e) => {
+                  capNhatTrangHienTai(1);
+                  capNhatTuKhoa(e.target.value);
+                }}
                 />
             </div>
         </div>
 
-        <DepartmentTable data={filtered} onDelete={deleteDepartment} onToggleVisibility={toggleVisibility} onEdit={handleEdit} />
+        <DepartmentTable
+          data={danhSachDaLoc.slice((trangHienTai - 1) * SO_MUC_MOI_TRANG, trangHienTai * SO_MUC_MOI_TRANG).map((dept) => ({
+            ...dept,
+            nhanSu: soNhanSuTheoPhong[dept.tenPhong] || 0,
+          }))}
+          totalCount={danhSachDaLoc.length}
+          page={trangHienTai}
+          pageSize={SO_MUC_MOI_TRANG}
+          pageCount={Math.max(1, Math.ceil(danhSachDaLoc.length / SO_MUC_MOI_TRANG))}
+          onPageChange={capNhatTrangHienTai}
+          onDelete={xoaPhongBan}
+          onToggleVisibility={daoTrangThaiHienThi}
+          onEdit={chonPhongBanSua}
+          onViewEmployees={xemNhanSuPhong}
+        />
 
         <div className="fixed bottom-4 right-4 space-y-2 z-50">
-          {toasts.map((toast) => (
+          {danhSachThongBao.map((thongBao) => (
             <div
-              key={toast.id}
+              key={thongBao.id}
               className="bg-gray-800 text-white py-2 px-4 rounded-lg shadow-lg animate-fade-in-out"
             >
-              {toast.message}
+              {thongBao.noiDung}
             </div>
           ))}
         </div>
 
+        <EmployeesListModal
+          open={moCuaSoNhanSu}
+          onClose={dongCuaSoNhanSu}
+          title={
+            phongDuocChon
+              ? `Nhân sự - ${phongDuocChon.tenPhong}`
+              : "Nhân sự phòng ban"
+          }
+          employees={nhanSuPhongChon}
+          description={
+            nhanSuPhongChon.length
+              ? `Có ${nhanSuPhongChon.length} nhân viên thuộc ${phongDuocChon?.tenPhong ?? "phòng ban"}.`
+              : undefined
+          }
+          emptyDescription="Chưa có nhân viên nào trong phòng ban này."
+        />
+
         <AddDepartmentModal
-          open={openAdd}
-          onClose={() => setOpenAdd(false)}
-          onSave={addDepartment}
-          generatedCode={"Nhập mã hoặc để trống để tạo tự động"}
+          open={moThemPhongBan}
+          onClose={() => datMoThemPhongBan(false)}
+          onSave={themPhongBan}
         />
 
         <EditDepartmentModal
-          open={!!editingDepartment}
-          onClose={() => setEditingDepartment(null)}
-          department={editingDepartment}
-          onSave={updateDepartment}
+          open={!!phongDangSua}
+          onClose={() => capNhatPhongDangSua(null)}
+          department={phongDangSua}
+          onSave={capNhatPhongBan}
         />
 
       </div>

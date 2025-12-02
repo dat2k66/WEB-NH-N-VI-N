@@ -2,14 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import type { Employee } from "./EmployeePage";
 import { Modal } from "./Modal";
 import { Button } from "./Button";
+import { captureFaceDescriptor, descriptorToArray } from "../../lib/faceRecognition";
+import { attendanceService } from "../../services/attendanceService";
 
 type FaceRegistrationModalProps = {
   open: boolean;
   onClose: () => void;
   employee: Employee | null;
   onSaved?: () => void;
-  onCapture?: (dataUrl: string) => void;
-  onRetake?: () => void;
 };
 
 export function FaceRegistrationModal({
@@ -17,15 +17,15 @@ export function FaceRegistrationModal({
   onClose,
   employee,
   onSaved,
-  onCapture,
-  onRetake,
 }: FaceRegistrationModalProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isCameraReady, setIsCameraReady] = useState(false);
+  const [descriptor, setDescriptor] = useState<Float32Array | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -66,32 +66,63 @@ export function FaceRegistrationModal({
       setCapturedImage(null);
       setError(null);
       setIsCameraReady(false);
+      setDescriptor(null);
+      setIsProcessing(false);
+      setIsSaving(false);
     };
   }, [open]);
 
-  const handleCapture = () => {
-    if (!videoRef.current || !canvasRef.current) return;
-    const canvas = canvasRef.current;
-    canvas.width = videoRef.current.videoWidth;
-    canvas.height = videoRef.current.videoHeight;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
-    const dataUrl = canvas.toDataURL("image/png");
-    setCapturedImage(dataUrl);
-    onCapture?.(dataUrl);
+  const handleCapture = async () => {
+    if (!videoRef.current) return;
+    setIsProcessing(true);
+    try {
+      const result = await captureFaceDescriptor(videoRef.current);
+      if (!result.descriptor) {
+        setCapturedImage(null);
+        setDescriptor(null);
+        setError("Không tìm thấy khuôn mặt. Vui lòng thử lại với ánh sáng tốt hơn.");
+        return;
+      }
+      setCapturedImage(result.dataUrl);
+      setDescriptor(result.descriptor);
+      setError(null);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Không thể nhận diện khuôn mặt. Vui lòng thử lại.";
+      setError(message);
+      setCapturedImage(null);
+      setDescriptor(null);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleRetake = () => {
     setCapturedImage(null);
-    onCapture?.("");
-    onRetake?.();
+    setDescriptor(null);
+    setError(null);
   };
 
-  const handleSave = () => {
-    if (!capturedImage || !employee) return;
-    localStorage.setItem(`faceData:${employee.id}`, capturedImage);
-    onSaved?.();
+  const handleSave = async () => {
+    if (!descriptor || !employee) {
+      setError("Vui lòng chụp khuôn mặt trước khi lưu.");
+      return;
+    }
+    setIsSaving(true);
+    try {
+      await attendanceService.enrollFace({
+        employeeId: employee.id,
+        embedding: descriptorToArray(descriptor),
+        snapshot: capturedImage ?? undefined,
+      });
+      onSaved?.();
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Không thể lưu khuôn mặt. Vui lòng thử lại.";
+      setError(message);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   if (!employee) return null;
@@ -126,7 +157,6 @@ export function FaceRegistrationModal({
               className="w-full h-full object-cover"
             />
           )}
-          <canvas ref={canvasRef} className="hidden" />
         </div>
 
         <div className="flex flex-wrap gap-3 justify-end">
@@ -134,17 +164,17 @@ export function FaceRegistrationModal({
             <Button
               type="button"
               onClick={handleCapture}
-              disabled={!isCameraReady || !!error}
+              disabled={!isCameraReady || !!error || isProcessing}
             >
-              Chụp
+              {isProcessing ? "Đang xử lý..." : "Chụp"}
             </Button>
           ) : (
             <>
               <Button variant="ghost" type="button" onClick={handleRetake}>
                 Chụp lại
               </Button>
-              <Button type="button" onClick={handleSave}>
-                Lưu khuôn mặt
+              <Button type="button" onClick={handleSave} disabled={isSaving}>
+                {isSaving ? "Đang lưu..." : "Lưu khuôn mặt"}
               </Button>
             </>
           )}

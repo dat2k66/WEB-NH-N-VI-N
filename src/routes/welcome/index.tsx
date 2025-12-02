@@ -7,12 +7,28 @@ import './welcome.css';
 
 const menuItems = ['Tài liệu', 'Hỗ trợ', 'Đăng nhập'];
 
+const docDanhSachNhanVien = () => {
+  if (typeof window === 'undefined') return [];
+  const stored = localStorage.getItem("employeesData");
+  if (!stored) return [];
+  try {
+    return JSON.parse(stored) ?? [];
+  } catch (error) {
+    console.warn("Không đọc được employeesData:", error);
+    return [];
+  }
+};
+
 const TrangChaoMung = () => {
   const navigate = useNavigate();
   const [moDangNhapQuanTri, setMoDangNhapQuanTri] = useState(false);
+  const [moDangNhapChamCong, setMoDangNhapChamCong] = useState(false);
   const [email, setEmail] = useState(adminAccount.email);
   const [matKhau, setMatKhau] = useState(adminAccount.password);
   const [thongBaoLoi, setThongBaoLoi] = useState<string | null>(null);
+  const [taiKhoanNhanVien, setTaiKhoanNhanVien] = useState('');
+  const [matKhauNhanVien, setMatKhauNhanVien] = useState('');
+  const [thongBaoLoiNhanVien, setThongBaoLoiNhanVien] = useState<string | null>(null);
 
   const xuLyDangNhap = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -23,6 +39,30 @@ const TrangChaoMung = () => {
     } else {
       setThongBaoLoi('Email hoặc mật khẩu không đúng.');
     }
+  };
+
+  const xuLyDangNhapChamCong = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const danhSach = docDanhSachNhanVien();
+    const timThay = danhSach.find(
+      (emp: { taiKhoan?: string; matKhau?: string }) =>
+        emp.taiKhoan === taiKhoanNhanVien && emp.matKhau === matKhauNhanVien
+    );
+    if (timThay && timThay.id) {
+      localStorage.setItem("attendanceEmployeeId", timThay.id);
+      setThongBaoLoiNhanVien(null);
+      setMoDangNhapChamCong(false);
+      navigate('/attendance');
+    } else {
+      setThongBaoLoiNhanVien('Tài khoản hoặc mật khẩu không đúng.');
+    }
+  };
+
+  const moFormChamCong = () => {
+    setTaiKhoanNhanVien('');
+    setMatKhauNhanVien('');
+    setThongBaoLoiNhanVien(null);
+    setMoDangNhapChamCong(true);
   };
 
   return (
@@ -71,7 +111,7 @@ const TrangChaoMung = () => {
               <div className="vung-nut-hanh-dong">
                 <button
                   className="nut-trang-cham-cong"
-                  onClick={() => navigate('/attendance')}
+                  onClick={moFormChamCong}
                 >
                   Chấm công
                 </button>
@@ -104,9 +144,6 @@ const TrangChaoMung = () => {
             <div className="hop-dang-nhap">
               <div className="phan-chao-dang-nhap">
                 <p className="tieu-de-dang-nhap">HR Pro Admin</p>
-                <p className="mo-ta-dang-nhap">
-                  Đăng nhập để truy cập bảng quản trị, theo dõi dữ liệu thời gian thực và duyệt yêu cầu.
-                </p>
                 <img src={anhDangNhap} alt="Mô tả đăng nhập" className="anh-dang-nhap" />
               </div>
               <div className="cot-dang-nhap">
@@ -121,7 +158,6 @@ const TrangChaoMung = () => {
                 <div className="phan-dau-form">
                   <p className="nhan-form">Chào mừng quay lại</p>
                   <h2 className="tieu-de-form">Đăng nhập quản trị</h2>
-                  <p className="mo-ta-form">Nhập thông tin tài khoản demo phía dưới để tiếp tục.</p>
                 </div>
                 <form className="form-dang-nhap" onSubmit={xuLyDangNhap}>
                   <label className="nhan-truong">
@@ -151,9 +187,56 @@ const TrangChaoMung = () => {
                   <button type="submit" className="nut-dang-nhap">
                     Đăng nhập
                   </button>
-                  <p className="ghi-chu-demo">
-                    Demo: {adminAccount.email} / {adminAccount.password}
-                  </p>
+                </form>
+              </div>
+            </div>
+          </div>
+        )}
+        {moDangNhapChamCong && (
+          <div className="lop-phu-dang-nhap" role="dialog" aria-modal="true">
+            <div className="hop-dang-nhap">
+              <div className="phan-chao-dang-nhap">
+                <p className="tieu-de-dang-nhap">HR Pro Attendance</p>
+                <img src={anhDangNhap} alt="Đăng nhập nhân viên" className="anh-dang-nhap" />
+              </div>
+              <div className="cot-dang-nhap">
+                <button
+                  type="button"
+                  className="nut-dong-modal"
+                  onClick={() => setMoDangNhapChamCong(false)}
+                  aria-label="Đóng đăng nhập nhân viên"
+                >
+                  ✕
+                </button>
+                <div className="phan-dau-form">
+                  <p className="nhan-form">Xin chào</p>
+                  <h2 className="tieu-de-form">Đăng nhập chấm công</h2>
+                </div>
+                <form className="form-dang-nhap" onSubmit={xuLyDangNhapChamCong}>
+                  <label className="nhan-truong">
+                    Tài khoản
+                    <input
+                      className="truong-nhap"
+                      type="text"
+                      value={taiKhoanNhanVien}
+                      onChange={(event) => setTaiKhoanNhanVien(event.target.value)}
+                      placeholder="VD: minhanh"
+                    />
+                  </label>
+                  <label className="nhan-truong">
+                    Mật khẩu
+                    <input
+                      className="truong-nhap"
+                      type="password"
+                      value={matKhauNhanVien}
+                      onChange={(event) => setMatKhauNhanVien(event.target.value)}
+                      placeholder="••••••••"
+                    />
+                  </label>
+                  {thongBaoLoiNhanVien && <p className="thong-bao-loi">{thongBaoLoiNhanVien}</p>}
+                  <button type="submit" className="nut-dang-nhap">
+                    Đăng nhập & chấm công
+                  </button>
                 </form>
               </div>
             </div>

@@ -4,6 +4,7 @@ import { Input } from "./Input";
 import { Select } from "./Select";
 import { Button } from "./Button";
 import type { Department } from "./DepartmentPage";
+import { generateDepartmentCode } from "../../utils/employeeCode";
 
 export type DepartmentEditData = {
   maPhong: string;
@@ -23,16 +24,16 @@ export function EditDepartmentModal({
   onSave: (data: DepartmentEditData) => void;
   department: Department | null;
 }) {
-  const [formData, setFormData] = useState<DepartmentEditData>({
-    maPhong: '',
-    tenPhong: '',
+  const [duLieuPhongBan, capNhatDuLieuPhongBan] = useState<DepartmentEditData>({
+    maPhong: "",
+    tenPhong: "",
     namThanhLap: new Date().getFullYear(),
-    trangThai: 'active',
+    trangThai: "active",
   });
 
   useEffect(() => {
     if (department) {
-      setFormData({
+      capNhatDuLieuPhongBan({
         maPhong: department.maPhong,
         tenPhong: department.tenPhong,
         namThanhLap: department.namThanhLap,
@@ -41,37 +42,64 @@ export function EditDepartmentModal({
     }
   }, [department]);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+  useEffect(() => {
+    capNhatDuLieuPhongBan((truocDo) => {
+      if (!truocDo.tenPhong) return truocDo;
+      const maTuDong = generateDepartmentCode(truocDo.tenPhong);
+      if (maTuDong && truocDo.maPhong !== maTuDong) {
+        return { ...truocDo, maPhong: maTuDong };
+      }
+      return truocDo;
+    });
+  }, [duLieuPhongBan.tenPhong]);
+
+  const xuLyThayDoi = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: name === 'namThanhLap' ? parseInt(value, 10) || 0 : value }));
+    capNhatDuLieuPhongBan((prev) => ({
+      ...prev,
+      [name]: name === "namThanhLap" ? parseInt(value, 10) || 0 : value,
+    }));
   };
 
-  const handleSubmit = (e: FormEvent) => {
+  const xuLyGuiForm = (e: FormEvent) => {
     e.preventDefault();
-    if (!formData.tenPhong) return alert("Tên phòng không được để trống");
-    onSave(formData);
+    if (!duLieuPhongBan.tenPhong) {
+      alert("Tên phòng không được để trống");
+      return;
+    }
+    if (!duLieuPhongBan.maPhong) {
+      alert("Không thể tạo mã phòng ban.");
+      return;
+    }
+    onSave(duLieuPhongBan);
   };
 
   if (!department) return null;
 
   return (
     <Modal open={open} onClose={onClose} title="Chỉnh sửa phòng ban">
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={xuLyGuiForm} className="space-y-4">
         <div>
-          <label className="block text-sm font-medium mb-1">Mã phòng</label>
-          <Input name="maPhong" value={formData.maPhong} onChange={handleChange} required />
+          <label className="block text-sm font-semibold text-black mb-2">Mã phòng</label>
+          <Input name="maPhong" value={duLieuPhongBan.maPhong} readOnly className="bg-slate-50" />
         </div>
         <div>
-          <label className="block text-sm font-medium mb-1">Tên phòng</label>
-          <Input name="tenPhong" value={formData.tenPhong} onChange={handleChange} required />
+          <label className="block text-sm font-semibold text-black mb-2">Tên phòng</label>
+          <Input name="tenPhong" value={duLieuPhongBan.tenPhong} onChange={xuLyThayDoi} required />
         </div>
         <div>
-          <label className="block text-sm font-medium mb-1">Năm thành lập</label>
-          <Input name="namThanhLap" type="number" value={formData.namThanhLap} onChange={handleChange} required />
+          <label className="block text-sm font-semibold text-black mb-2">Năm thành lập</label>
+          <Input
+            name="namThanhLap"
+            type="number"
+            value={duLieuPhongBan.namThanhLap}
+            onChange={xuLyThayDoi}
+            required
+          />
         </div>
         <div>
-          <label className="block text-sm font-medium mb-1">Trạng thái</label>
-          <Select name="trangThai" value={formData.trangThai} onChange={handleChange}>
+          <label className="block text-sm font-semibold text-black mb-2">Trạng thái</label>
+          <Select name="trangThai" value={duLieuPhongBan.trangThai} onChange={xuLyThayDoi}>
             <option value="active">Hoạt động</option>
             <option value="inactive">Ngưng</option>
           </Select>

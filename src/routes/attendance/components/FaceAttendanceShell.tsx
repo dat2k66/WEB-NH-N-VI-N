@@ -1,14 +1,36 @@
-import { useEffect, useRef, useState } from 'react';
+import {
+  forwardRef,
+  type ForwardedRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from 'react';
+
+export type FaceAttendanceShellHandle = {
+  getVideoElement: () => HTMLVideoElement | null;
+};
 
 type FaceAttendanceShellProps = {
   onCameraReady?: () => void;
   onCameraError?: (message: string) => void;
 };
 
-const FaceAttendanceShell = ({ onCameraReady, onCameraError }: FaceAttendanceShellProps) => {
+const FaceAttendanceShell = (
+  { onCameraReady, onCameraError }: FaceAttendanceShellProps,
+  ref: ForwardedRef<FaceAttendanceShellHandle>
+) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [trangThaiCamera, setTrangThaiCamera] = useState<'dang-tai' | 'san-sang' | 'loi'>('dang-tai');
   const [thongDiepLoi, setThongDiepLoi] = useState('');
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      getVideoElement: () => videoRef.current,
+    }),
+    []
+  );
 
   useEffect(() => {
     let stream: MediaStream | null = null;
@@ -62,4 +84,4 @@ const FaceAttendanceShell = ({ onCameraReady, onCameraError }: FaceAttendanceShe
   );
 };
 
-export default FaceAttendanceShell;
+export default forwardRef(FaceAttendanceShell);

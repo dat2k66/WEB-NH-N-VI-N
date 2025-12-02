@@ -5,6 +5,7 @@ import { Input } from "./Input";
 import { Select } from "./Select";
 import { Button } from "./Button";
 import type { Employee } from "./EmployeePage";
+import { buildEmployeeCode, extractJoinOrderFromCode } from "../../utils/employeeCode";
 
 export type EmployeeEditData = {
   code: string;
@@ -13,6 +14,49 @@ export type EmployeeEditData = {
   position: string;
   salary: number;
   status: "active" | "inactive";
+  taiKhoan: string;
+  matKhau: string;
+};
+
+type StoredDepartment = {
+  id: string;
+  tenPhong: string;
+  maPhong?: string;
+  visible?: boolean;
+};
+
+type StoredPosition = {
+  id: string;
+  tenChucVu: string;
+  maChucVu?: string;
+  visible?: boolean;
+};
+
+const defaultDepartments: StoredDepartment[] = [
+  { id: "dept-1", tenPhong: "Phòng Kinh Doanh", maPhong: "PKD", visible: true },
+  { id: "dept-2", tenPhong: "Phòng Nhân Sự", maPhong: "PNS", visible: true },
+  { id: "dept-3", tenPhong: "Phòng Kế Toán", maPhong: "PKT", visible: true },
+];
+
+const defaultPositions: StoredPosition[] = [
+  { id: "pos-1", tenChucVu: "Nhân viên", maChucVu: "N", visible: true },
+  { id: "pos-2", tenChucVu: "Trưởng phòng", maChucVu: "T", visible: true },
+  { id: "pos-3", tenChucVu: "Giám đốc", maChucVu: "G", visible: true },
+];
+
+const loadCollection = <T,>(key: string, fallback: T[]): T[] => {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return parsed as T[];
+    }
+    return fallback;
+  } catch (error) {
+    console.warn(`Không đọc được dữ liệu ${key}:`, error);
+    return fallback;
+  }
 };
 
 export function EditEmployeeModal({
@@ -33,7 +77,12 @@ export function EditEmployeeModal({
     position: '',
     salary: 0,
     status: 'active',
+    taiKhoan: '',
+    matKhau: '',
   });
+  const [departments, setDepartments] = useState<StoredDepartment[]>([]);
+  const [positions, setPositions] = useState<StoredPosition[]>([]);
+  const [joinOrder, setJoinOrder] = useState<number>(1);
 
   useEffect(() => {
     if (employee) {
@@ -44,9 +93,50 @@ export function EditEmployeeModal({
         salary: employee.salary,
         code: employee.code,
         status: employee.status,
+        taiKhoan: employee.taiKhoan,
+        matKhau: employee.matKhau,
       });
+      const order = employee.joinOrder ?? extractJoinOrderFromCode(employee.code) ?? 1;
+      setJoinOrder(order);
     }
   }, [employee]);
+
+  useEffect(() => {
+    if (!open) return;
+    const departmentList = loadCollection<StoredDepartment>("departmentsData", defaultDepartments);
+    const positionList = loadCollection<StoredPosition>("positionsData", defaultPositions);
+    const visibleDepartments = departmentList.filter((dept) => dept.visible ?? true);
+    const visiblePositions = positionList.filter((pos) => pos.visible ?? true);
+
+    if (employee) {
+      const hasDept = visibleDepartments.some((dept) => dept.tenPhong === employee.dept);
+      if (!hasDept) {
+        const currentDept = departmentList.find((dept) => dept.tenPhong === employee.dept);
+        if (currentDept) visibleDepartments.push(currentDept);
+      }
+      const hasPos = visiblePositions.some((pos) => pos.tenChucVu === employee.position);
+      if (!hasPos) {
+        const currentPos = positionList.find((pos) => pos.tenChucVu === employee.position);
+        if (currentPos) visiblePositions.push(currentPos);
+      }
+    }
+
+    setDepartments(visibleDepartments);
+    setPositions(visiblePositions);
+  }, [open, employee]);
+
+  useEffect(() => {
+    if (!employee) return;
+    if (!formData.dept || !formData.position) return;
+    const nextCode = buildEmployeeCode({
+      deptName: formData.dept,
+      positionName: formData.position,
+      joinOrder,
+      departments,
+      positions,
+    });
+    setFormData((prev) => (prev.code === nextCode ? prev : { ...prev, code: nextCode }));
+  }, [formData.dept, formData.position, joinOrder, departments, positions, employee]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -56,33 +146,67 @@ export function EditEmployeeModal({
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     if (!formData.name) return alert("Tên không được để trống");
+    if (!formData.taiKhoan || !formData.matKhau) return alert("Cần nhập tài khoản và mật khẩu.");
     onSave(formData);
   };
 
   if (!employee) return null;
 
   return (
-    <Modal open={open} onClose={onClose} title="Chỉnh sửa nhân viên">
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Chỉnh sửa nhân viên"
+      titleClassName="text-black"
+    >
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="block text-sm font-medium mb-1">Mã nhân viên</label>
-          <Input name="code" value={formData.code} onChange={handleChange} required />
+          <label className="block text-sm font-semibold text-black mb-2">Mã nhân viên</label>
+          <Input name="code" value={formData.code} readOnly className="bg-slate-50" placeholder="Mã tự động" />
         </div>
         <div>
-          <label className="block text-sm font-medium mb-1">Họ tên</label>
-          <Input name="name" value={formData.name} onChange={handleChange} required />
+          <label className="block text-sm font-semibold text-black mb-2">Họ tên</label>
+          <Input name="name" value={formData.name} onChange={handleChange} required placeholder="Nhập họ tên" />
         </div>
         <div>
-          <label className="block text-sm font-medium mb-1">Phòng ban</label>
-          <Input name="dept" value={formData.dept} onChange={handleChange} required />
+          <label className="block text-sm font-semibold text-black mb-2">Phòng ban</label>
+          <Select name="dept" value={formData.dept} onChange={handleChange} required>
+            {departments.length === 0 ? (
+              <option value="">Chưa có phòng ban khả dụng</option>
+            ) : (
+              departments.map((dept) => (
+                <option key={dept.id} value={dept.tenPhong}>
+                  {dept.tenPhong}
+                </option>
+              ))
+            )}
+          </Select>
         </div>
         <div>
-          <label className="block text-sm font-medium mb-1">Chức vụ</label>
-          <Input name="position" value={formData.position} onChange={handleChange} required />
+          <label className="block text-sm font-semibold text-black mb-2">Chức vụ</label>
+          <Select name="position" value={formData.position} onChange={handleChange} required>
+            {positions.length === 0 ? (
+              <option value="">Chưa có chức vụ khả dụng</option>
+            ) : (
+              positions.map((pos) => (
+                <option key={pos.id} value={pos.tenChucVu}>
+                  {pos.tenChucVu}
+                </option>
+              ))
+            )}
+          </Select>
         </div>
         <div>
-          <label className="block text-sm font-medium mb-1">Lương cơ bản</label>
-          <Input name="salary" type="number" value={formData.salary} onChange={handleChange}  required />
+          <label className="block text-sm font-semibold text-black mb-2">Lương cơ bản</label>
+          <Input name="salary" type="number" value={formData.salary} onChange={handleChange} required placeholder="VD: 15000000" />
+        </div>
+        <div>
+          <label className="block text-sm font-semibold text-black mb-2">Tài khoản đăng nhập</label>
+          <Input name="taiKhoan" value={formData.taiKhoan} onChange={handleChange} required placeholder="VD: dao.nhat" />
+        </div>
+        <div>
+          <label className="block text-sm font-semibold text-black mb-2">Mật khẩu</label>
+          <Input name="matKhau" type="password" value={formData.matKhau} onChange={handleChange} required placeholder="Ít nhất 6 ký tự" />
         </div>
         <div>
           <label className="block text-sm font-medium mb-1">Trạng thái</label>

@@ -4,6 +4,7 @@ import { Input } from "./Input";
 import { Select } from "./Select";
 import { Button } from "./Button";
 import type { Position } from "./PositionPage";
+import { generatePositionShortCode } from "../../utils/employeeCode";
 
 export type PositionEditData = {
   maChucVu: string;
@@ -38,6 +39,14 @@ export function EditPositionModal({
     }
   }, [position]);
 
+  useEffect(() => {
+    setFormData((prev) => {
+      const code = generatePositionShortCode(prev.tenChucVu);
+      if (prev.maChucVu === code) return prev;
+      return { ...prev, maChucVu: code };
+    });
+  }, [formData.tenChucVu]);
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
@@ -46,6 +55,7 @@ export function EditPositionModal({
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     if (!formData.tenChucVu) return alert("Tên chức vụ không được để trống");
+    if (!formData.maChucVu) return alert("Không thể tạo mã chức vụ. Vui lòng kiểm tra lại tên.");
     onSave(formData);
   };
 
@@ -55,15 +65,15 @@ export function EditPositionModal({
     <Modal open={open} onClose={onClose} title="Chỉnh sửa chức vụ">
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="block text-sm font-medium mb-1">Mã chức vụ</label>
-          <Input name="maChucVu" value={formData.maChucVu} onChange={handleChange} required />
+          <label className="block text-sm font-semibold text-black mb-2">Mã chức vụ</label>
+          <Input name="maChucVu" value={formData.maChucVu} readOnly className="bg-slate-50" />
         </div>
         <div>
-          <label className="block text-sm font-medium mb-1">Tên chức vụ</label>
+          <label className="block text-sm font-semibold text-black mb-2">Tên chức vụ</label>
           <Input name="tenChucVu" value={formData.tenChucVu} onChange={handleChange} required />
         </div>
         <div>
-          <label className="block text-sm font-medium mb-1">Trạng thái</label>
+          <label className="block text-sm font-semibold text-black mb-2">Trạng thái</label>
           <Select name="trangThai" value={formData.trangThai} onChange={handleChange}><option value="active">Hoạt động</option><option value="inactive">Ngưng</option></Select>
         </div>
         <div className="flex justify-end gap-2 pt-4"><Button variant="ghost" type="button" onClick={onClose}>Huỷ</Button><Button type="submit">Lưu thay đổi</Button></div>

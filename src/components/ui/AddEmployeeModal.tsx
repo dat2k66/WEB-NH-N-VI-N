@@ -4,6 +4,7 @@ import { Modal } from "./Modal";
 import { Input } from "./Input";
 import { Button } from "./Button";
 import { Select } from "./Select";
+import { buildEmployeeCode } from "../../utils/employeeCode";
 
 export type NewEmployeeData = {
   name: string;
@@ -13,44 +14,120 @@ export type NewEmployeeData = {
   salary: number;
   status: "active" | "inactive";
   photo?: string;
+  taiKhoan: string;
+  matKhau: string;
+};
+
+type StoredDepartment = {
+  id: string;
+  tenPhong: string;
+  maPhong?: string;
+  visible?: boolean;
+};
+
+type StoredPosition = {
+  id: string;
+  tenChucVu: string;
+  maChucVu?: string;
+  visible?: boolean;
+};
+
+const defaultDepartments: StoredDepartment[] = [
+  { id: "dept-1", tenPhong: "Phòng Kinh Doanh", maPhong: "PKD", visible: true },
+  { id: "dept-2", tenPhong: "Phòng Nhân Sự", maPhong: "PNS", visible: true },
+  { id: "dept-3", tenPhong: "Phòng Kế Toán", maPhong: "PKT", visible: true },
+];
+
+const defaultPositions: StoredPosition[] = [
+  { id: "pos-1", tenChucVu: "Nhân viên", maChucVu: "N", visible: true },
+  { id: "pos-2", tenChucVu: "Trưởng phòng", maChucVu: "T", visible: true },
+  { id: "pos-3", tenChucVu: "Giám đốc", maChucVu: "G", visible: true },
+];
+
+const loadCollection = <T,>(key: string, fallback: T[]): T[] => {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return parsed as T[];
+    }
+    return fallback;
+  } catch (error) {
+    console.warn(`Không đọc được dữ liệu ${key}:`, error);
+    return fallback;
+  }
 };
 
 export function AddEmployeeModal({
   open,
   onClose,
   onSave,
-  generatedCode,
+  nextJoinOrder,
 }: {
   open: boolean;
   onClose: () => void;
   onSave: (data: NewEmployeeData) => void;
-  generatedCode: string;
+  nextJoinOrder: number;
 }) {
   const [formData, setFormData] = useState<NewEmployeeData>({
     name: '',
     code: '',
     dept: '',
-    position: 'Nhân viên',
+    position: '',
     salary: 0,
     status: 'active',
     photo: '',
+    taiKhoan: '',
+    matKhau: '',
   });
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [departments, setDepartments] = useState<StoredDepartment[]>([]);
+  const [positions, setPositions] = useState<StoredPosition[]>([]);
 
   useEffect(() => {
-    if (open) {
-      setFormData({
-        name: '',
-        code: '',
-        dept: '',
-        position: 'Nhân viên',
-        salary: 0,
-        status: 'active',
-        photo: '',
-      });
-      setPhotoPreview(null);
-    }
+    if (!open) return;
+    setFormData({
+      name: '',
+      code: '',
+      dept: '',
+      position: '',
+      salary: 0,
+      status: 'active',
+      photo: '',
+      taiKhoan: '',
+      matKhau: '',
+    });
+    setPhotoPreview(null);
+    const departmentList = loadCollection<StoredDepartment>("departmentsData", defaultDepartments);
+    const positionList = loadCollection<StoredPosition>("positionsData", defaultPositions);
+    setDepartments(departmentList.filter((dept) => dept.visible ?? true));
+    setPositions(positionList.filter((pos) => pos.visible ?? true));
   }, [open]);
+
+  useEffect(() => {
+    if (departments.length > 0 && !formData.dept) {
+      setFormData((prev) => ({ ...prev, dept: departments[0].tenPhong }));
+    }
+  }, [departments, formData.dept]);
+
+  useEffect(() => {
+    if (positions.length > 0 && !formData.position) {
+      setFormData((prev) => ({ ...prev, position: positions[0].tenChucVu }));
+    }
+  }, [positions, formData.position]);
+
+  useEffect(() => {
+    if (!formData.dept || !formData.position || !nextJoinOrder) return;
+    const newCode = buildEmployeeCode({
+      deptName: formData.dept,
+      positionName: formData.position,
+      joinOrder: nextJoinOrder,
+      departments,
+      positions,
+    });
+    setFormData((prev) => (prev.code === newCode ? prev : { ...prev, code: newCode }));
+  }, [formData.dept, formData.position, nextJoinOrder, departments, positions]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -72,8 +149,12 @@ export function AddEmployeeModal({
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if (!formData.name || !formData.code) {
-      alert("Vui lòng nhập đủ Mã NV và Họ tên.");
+    if (!formData.name) {
+      alert("Vui lòng nhập họ tên.");
+      return;
+    }
+    if (!formData.taiKhoan || !formData.matKhau) {
+      alert("Vui lòng nhập tài khoản và mật khẩu chấm công.");
       return;
     }
     onSave(formData);
@@ -81,36 +162,155 @@ export function AddEmployeeModal({
 
   return (
     <Modal open={open} onClose={onClose} title="Thêm nhân viên">
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-6">
         <div>
-          <label className="block text-sm font-medium mb-1">Mã NV</label>
-          <Input name="code" value={formData.code} onChange={handleChange} placeholder={generatedCode} />
+          <p className="text-xs font-semibold uppercase tracking-wide text-blue-500 mb-3">
+            Thông tin cơ bản
+          </p>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <label className="block text-sm font-semibold text-slate-900 mb-2">
+                Mã nhân viên
+              </label>
+              <Input
+                name="code"
+                value={formData.code}
+                readOnly
+                className="bg-slate-50"
+              />
+             
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-900 mb-2">
+                Họ và tên đầy đủ
+              </label>
+              <Input
+                name="name"
+                value={formData.name}
+                onChange={handleChange}
+                placeholder="VD: Nguyễn Minh Anh"
+                required
+              />
+            </div>
+          </div>
         </div>
+
         <div>
-          <label className="block text-sm font-medium mb-1">Họ và tên</label>
-          <Input name="name" value={formData.name} onChange={handleChange} placeholder="Họ và tên" required />
+          <p className="text-xs font-semibold uppercase tracking-wide text-blue-500 mb-3">
+            Thông tin công việc
+          </p>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <label className="block text-sm font-semibold text-slate-900 mb-2">
+                Phòng ban
+              </label>
+              <Select
+                name="dept"
+                value={formData.dept}
+                onChange={handleChange}
+                required
+              >
+                {departments.length === 0 ? (
+                  <option value="">
+                    Chưa có phòng ban nào. Vui lòng tạo trước ở trang Phòng ban.
+                  </option>
+                ) : (
+                  departments.map((dept) => (
+                    <option key={dept.id} value={dept.tenPhong}>
+                      {dept.tenPhong}
+                    </option>
+                  ))
+                )}
+              </Select>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-900 mb-2">
+                Chức vụ
+              </label>
+              <Select
+                name="position"
+                value={formData.position}
+                onChange={handleChange}
+                required
+              >
+                {positions.length === 0 ? (
+                  <option value="">
+                    Chưa có chức vụ nào. Vui lòng tạo trước ở trang Chức vụ.
+                  </option>
+                ) : (
+                  positions.map((pos) => (
+                    <option key={pos.id} value={pos.tenChucVu}>
+                      {pos.tenChucVu}
+                    </option>
+                  ))
+                )}
+              </Select>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-900 mb-2">
+                Lương cơ bản (VNĐ)
+              </label>
+              <Input
+                name="salary"
+                type="number"
+                value={formData.salary}
+                onChange={handleChange}
+                placeholder="VD: 15000000"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-900 mb-2">
+                Trạng thái
+              </label>
+              <Select name="status" value={formData.status} onChange={handleChange}>
+                <option value="active">Hoạt động</option>
+                <option value="inactive">Ngưng</option>
+              </Select>
+            </div>
+          </div>
         </div>
+
         <div>
-          <label className="block text-sm font-medium mb-1">Phòng ban</label>
-          <Input name="dept" value={formData.dept} onChange={handleChange} placeholder="VD: Phòng Kinh Doanh" />
+          <p className="text-xs font-semibold uppercase tracking-wide text-blue-500 mb-3">
+            Tài khoản nhân viên
+          </p>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <label className="block text-sm font-semibold text-slate-600 mb-2">
+                Tài khoản đăng nhập
+              </label>
+              <Input
+                name="taiKhoan"
+                value={formData.taiKhoan}
+                onChange={handleChange}
+                placeholder="VD: minh.anh"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-600 mb-2">
+                Mật khẩu
+              </label>
+              <Input
+                name="matKhau"
+                type="password"
+                value={formData.matKhau}
+                onChange={handleChange}
+                placeholder="Ít nhất 6 ký tự"
+                required
+              />
+            </div>
+          </div>
         </div>
+
         <div>
-          <label className="block text-sm font-medium mb-1">Chức vụ</label>
-          <Input name="position" value={formData.position} onChange={handleChange} placeholder="VD: Nhân viên" required />
-        </div>
-        <div>
-          <label className="block text-sm font-medium mb-1">Lương cơ bản</label>
-          <Input name="salary" type="number" value={formData.salary} onChange={handleChange} placeholder="Lương cơ bản" required />
-        </div>
-        <div>
-          <label className="block text-sm font-medium mb-1">Trạng thái</label>
-          <Select name="status" value={formData.status} onChange={handleChange}>
-            <option value="active">Hoạt động</option>
-            <option value="inactive">Ngưng</option>
-          </Select>
-        </div>
-        <div>
-          <label className="block text-sm font-medium mb-1">Ảnh nhân viên</label>
+          <p className="text-xs font-semibold uppercase tracking-wide text-blue-500 mb-3">
+            Ảnh nhận diện
+          </p>
+          <label className="block text-sm font-semibold text-slate-900 mb-2">
+            Chọn ảnh nhân viên
+          </label>
           <input
             type="file"
             accept="image/*"
@@ -126,7 +326,7 @@ export function AddEmployeeModal({
               />
             ) : (
               <p className="text-xs text-gray-500">
-                Chưa chọn ảnh. Bạn có thể upload file JPG/PNG dưới 5MB.
+                
               </p>
             )}
           </div>

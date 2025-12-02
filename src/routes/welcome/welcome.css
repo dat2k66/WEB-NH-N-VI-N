@@ -160,11 +160,11 @@
   }
 
   .the-cham-cong {
-    @apply rounded-[24px] bg-gradient-to-br from-[#3d8bff] to-[#74c1ff] p-6 text-white shadow-[0_18px_40px_rgba(61,139,255,0.3)];
+    @apply rounded-[24px] bg-gradient-to-br from-[#3d8bff] to-[#74c1ff] p-6 text-white shadow-[0_18px_40px_rgba(61,139,255,0.3)] transform transition-all duration-300 ease-out hover:-translate-y-1 hover:scale-[1.03] hover:shadow-[0_26px_50px_rgba(61,139,255,0.45)];
   }
 
   .the-quan-tri {
-    @apply rounded-[24px] bg-gradient-to-br from-[#1dc8a9] via-[#20b7c6] to-[#1a9ad6] p-6 text-white shadow-[0_18px_40px_rgba(26,154,214,0.35)];
+    @apply rounded-[24px] bg-gradient-to-br from-[#1dc8a9] via-[#20b7c6] to-[#1a9ad6] p-6 text-white shadow-[0_18px_40px_rgba(26,154,214,0.35)] transform transition-all duration-300 ease-out hover:-translate-y-1 hover:scale-[1.03] hover:shadow-[0_26px_50px_rgba(26,154,214,0.45)];
   }
 
   .tieu-de-the {

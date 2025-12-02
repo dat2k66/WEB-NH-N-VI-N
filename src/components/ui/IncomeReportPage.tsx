@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   BarChart,
   Bar,
@@ -11,8 +11,23 @@ import {
   LineChart,
   Line,
 } from "recharts";
-import { Button } from "./Button";
 import { Select } from "./Select";
+
+const BAO_CAO_INTERVAL_MS = 5 * 60 * 1000; // 5 phút thực tế = 1 tháng mô phỏng
+const KIEM_TRA_INTERVAL_MS = 5 * 1000; // kiểm tra trạng thái mỗi 5 giây để không phải đợi đủ 5 phút từ lúc mở trang
+const REPORT_KEY = (employeeId: string) => `incomeReports:${employeeId}`;
+const REPORT_STATE_KEY = (employeeId: string) => `incomeReportState:${employeeId}`;
+const WORKING_HOURS_KEY = (employeeId: string) => `workingHours:${employeeId}`;
+
+type IncomeReportEntry = {
+  id: string;
+  year: number;
+  month: number;
+  baseSalary: number;
+  netIncome: number;
+  difference: number;
+  recordedAt: string;
+};
 
 // Sử dụng lại kiểu Employee từ EmployeePage để đảm bảo tính nhất quán
 type Employee = {
@@ -22,55 +37,137 @@ type Employee = {
 };
 
 // Đồng bộ dữ liệu nhân viên với EmployeePage.tsx
-const employees: Employee[] = [
-  { id: "1", name: "Nguyễn Minh Anh", salary: 10000000 },
-  { id: "2", name: "Nguyễn Minh Tạo", salary: 20000000 },
-  { id: "3", name: "Trần Quỳnh", salary: 12000000 },
-];
-
-
-const generateYearlyReport = (baseSalary: number, year: number) => {
-  const yearMultiplier = 1 + (year - 2024) * 0.05;
-  const details = Array.from({ length: 12 }, (_, i) => {
-    const month = i + 1;
-    const currentBaseSalary = baseSalary * yearMultiplier;
-    const bonus = currentBaseSalary * (0.1 + Math.random() * 0.2);
-    const netIncome = currentBaseSalary + bonus;
-    const difference = netIncome - currentBaseSalary;
-
-    return {
-      month,
-      baseSalary: Math.round(currentBaseSalary),
-      netIncome: Math.round(netIncome),
-      difference: Math.round(difference),
-    };
-  });
-
-  const total = details.reduce((sum, item) => sum + item.netIncome, 0);
-  const trend = details.slice(0, 6).map(d => ({ m: d.month, v: d.netIncome / 1_000_000 }));
-
-  return { summary: { total, trend }, details };
+const loadEmployees = (): Employee[] => {
+  const stored = localStorage.getItem("employeesData");
+  if (stored) {
+    try {
+      const parsed = JSON.parse(stored) as Array<{
+        id: string;
+        name: string;
+        salary?: number;
+      }>;
+      return parsed.map((emp) => ({
+        id: emp.id,
+        name: emp.name,
+        salary: Number(emp.salary) || 0,
+      }));
+    } catch (error) {
+      console.warn("Không đọc được employeesData:", error);
+    }
+  }
+  return [];
 };
 
-const generateAllReports = () => {
-  const reportData: Record<string, Record<string, any>> = {};
-  const years = [2025, 2024];
-
-  years.forEach(year => {
-    reportData[year] = {};
-    employees.forEach(employee => {
-      const report = generateYearlyReport(employee.salary, year);
-      const prevYearTotal = generateYearlyReport(employee.salary, year - 1).summary.total;
-      report.summary.change = prevYearTotal > 0 ? parseFloat((((report.summary.total - prevYearTotal) / prevYearTotal) * 100).toFixed(1)) : 0;
-      reportData[year][employee.name] = report;
-    });
-  });
-  return reportData;
-}
-
-const reportData = generateAllReports();
-
 const formatCurrency = (value: number) => new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND" }).format(value);
+
+const readWorkingHours = (employeeId: string) => {
+  if (typeof localStorage === "undefined") return 0;
+  const raw = localStorage.getItem(WORKING_HOURS_KEY(employeeId));
+  if (!raw) return 0;
+  try {
+    const parsed = JSON.parse(raw) as { hours?: number };
+    return Number(parsed.hours) || 0;
+  } catch (error) {
+    console.warn("Không đọc được workingHours:", error);
+    return 0;
+  }
+};
+
+const resetWorkingHours = (employeeId: string) => {
+  if (typeof localStorage === "undefined") return;
+  const now = new Date();
+  localStorage.setItem(
+    WORKING_HOURS_KEY(employeeId),
+    JSON.stringify({ year: now.getFullYear(), month: now.getMonth() + 1, hours: 0 })
+  );
+};
+
+const loadIncomeReports = (employeeId: string): IncomeReportEntry[] => {
+  if (typeof localStorage === "undefined") return [];
+  const raw = localStorage.getItem(REPORT_KEY(employeeId));
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as IncomeReportEntry[]) : [];
+  } catch (error) {
+    console.warn("Không đọc được incomeReports:", error);
+    return [];
+  }
+};
+
+const saveIncomeReports = (employeeId: string, data: IncomeReportEntry[]) => {
+  if (typeof localStorage === "undefined") return;
+  localStorage.setItem(REPORT_KEY(employeeId), JSON.stringify(data));
+};
+
+const ensureReportState = (employeeId: string) => {
+  if (typeof localStorage === "undefined") return null;
+  const now = Date.now();
+  const raw = localStorage.getItem(REPORT_STATE_KEY(employeeId));
+  if (!raw) {
+    const state = { startTime: now, lastSnapshotMonth: 0 };
+    localStorage.setItem(REPORT_STATE_KEY(employeeId), JSON.stringify(state));
+    return state;
+  }
+  try {
+    return JSON.parse(raw) as { startTime: number; lastSnapshotMonth: number };
+  } catch (error) {
+    console.warn("Không đọc được incomeReportState:", error);
+    const state = { startTime: now, lastSnapshotMonth: 0 };
+    localStorage.setItem(REPORT_STATE_KEY(employeeId), JSON.stringify(state));
+    return state;
+  }
+};
+
+const saveReportState = (employeeId: string, state: { startTime: number; lastSnapshotMonth: number }) => {
+  if (typeof localStorage === "undefined") return;
+  localStorage.setItem(REPORT_STATE_KEY(employeeId), JSON.stringify(state));
+};
+
+const computeIncomeForHours = (hours: number, salary: number) => {
+  const hourlyRate = salary / 160;
+  const hasBase = hours >= 40;
+  const overtimeHours = hasBase ? Math.max(0, hours - 40) : 0;
+  const baseSalary = hasBase ? salary : 0;
+  const netIncome = hasBase ? salary + overtimeHours * hourlyRate : 0;
+  return { baseSalary, netIncome, difference: netIncome - baseSalary };
+};
+
+const simulateMonthlyReport = (employee: Employee | undefined) => {
+  if (!employee || typeof localStorage === "undefined") return false;
+  const state = ensureReportState(employee.id);
+  if (!state) return false;
+  const now = Date.now();
+  const completedMonths = Math.floor((now - state.startTime) / BAO_CAO_INTERVAL_MS);
+  if (completedMonths <= state.lastSnapshotMonth) return false;
+  const reports = loadIncomeReports(employee.id);
+  let created = false;
+  while (state.lastSnapshotMonth < completedMonths) {
+    const nextIndex = state.lastSnapshotMonth + 1;
+    const year = 2025 + Math.floor((nextIndex - 1) / 12);
+    const month = ((nextIndex - 1) % 12) + 1;
+    const hours = readWorkingHours(employee.id);
+    const { baseSalary, netIncome, difference } = computeIncomeForHours(hours, employee.salary);
+    const entry: IncomeReportEntry = {
+      id: `${employee.id}-${year}-${month}-${Date.now()}`,
+      year,
+      month,
+      baseSalary,
+      netIncome,
+      difference,
+      recordedAt: new Date().toISOString(),
+    };
+    reports.push(entry);
+    resetWorkingHours(employee.id);
+    state.lastSnapshotMonth = nextIndex;
+    created = true;
+  }
+  if (created) {
+    saveIncomeReports(employee.id, reports);
+    saveReportState(employee.id, state);
+  }
+  return created;
+};
 
 const Header = () => (
   <div className="flex items-center justify-between mb-6">
@@ -96,9 +193,14 @@ const FilterBar = ({ year, setYear, employee, setEmployee, employeeList }: Filte
     </div>
     <div>
       <label className="block text-sm font-medium mb-1">Nhân viên</label>
-      <Select value={employee} onChange={(e) => setEmployee(e.target.value)}>
+      <Select
+        value={employee}
+        onChange={(e) => setEmployee(e.target.value)}
+        disabled={employeeList.length === 0}
+      >
+        {employeeList.length === 0 && <option value="">Chưa có dữ liệu nhân viên</option>}
         {employeeList.map((emp) => (
-          <option key={emp.id} value={emp.name}>{emp.name}</option>
+          <option key={emp.id} value={emp.id}>{emp.name}</option>
         ))}
       </Select>
     </div>
@@ -108,101 +210,137 @@ const FilterBar = ({ year, setYear, employee, setEmployee, employeeList }: Filte
 const IncomeChart = ({ data }: { data: any[] }) => (
   <div className="bg-white rounded-lg shadow-md p-6">
     <h2 className="text-xl font-semibold mb-4 text-gray-800">Lương thực nhận hàng tháng</h2>
-    <div style={{ width: "100%", height: 300 }}>
-      <ResponsiveContainer>
-        <BarChart data={data} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
-          <CartesianGrid strokeDasharray="3 3" vertical={false} />
-          <XAxis dataKey="month" tickFormatter={(tick) => `T${tick}`} />
-          <YAxis axisLine={false} tickLine={false} tickFormatter={(value) => `${value / 1000000}tr`} />
-          <Tooltip formatter={(value: number) => [formatCurrency(value), "Thực nhận"]} />
-          <Bar dataKey="netIncome" name="Lương thực nhận" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-        </BarChart>
-      </ResponsiveContainer>
-    </div>
+    {data.length === 0 ? (
+      <div className="flex h-48 items-center justify-center text-sm text-slate-400">
+        Chưa có dữ liệu để hiển thị.
+      </div>
+    ) : (
+      <div style={{ width: "100%", height: 300 }}>
+        <ResponsiveContainer>
+          <BarChart data={data} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+            <XAxis dataKey="month" tickFormatter={(tick) => `T${tick}`} />
+            <YAxis axisLine={false} tickLine={false} tickFormatter={(value) => `${value / 1000000}tr`} />
+            <Tooltip formatter={(value: number) => [formatCurrency(value), "Thực nhận"]} />
+            <Bar dataKey="netIncome" name="Lương thực nhận" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    )}
   </div>
 );
 
 const IncomeTable = ({ data }: { data: any[] }) => (
   <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden mt-6">
-    <table className="min-w-full text-left">
-      <thead className="bg-gray-50 border-b border-gray-200">
-        <tr>
-          {["Tháng", "Lương cơ bản", "Lương thực nhận", "Chênh lệch"].map((head) => (
-            <th key={head} className="px-4 py-3 text-sm text-black font-medium">{head}</th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {data.map((row) => (
-          <tr key={row.month} className="border-t border-gray-200 hover:bg-gray-50">
-            <td className="px-4 py-3 text-black font-medium">Tháng {row.month}</td>
-            <td className="px-4 py-3 text-black">{formatCurrency(row.baseSalary)}</td>
-            <td className="px-4 py-3 text-black font-semibold">{formatCurrency(row.netIncome)}</td>
-            <td className={`px-4 py-3 font-medium ${row.difference > 0 ? "text-green-600" : "text-red-600"}`}>
-              {formatCurrency(row.difference)}
-            </td>
+    {data.length === 0 ? (
+      <div className="py-10 text-center text-sm text-slate-400">
+        Chưa có dữ liệu bảng lương để hiển thị.
+      </div>
+    ) : (
+      <table className="min-w-full text-left">
+        <thead className="bg-gray-50 border-b border-gray-200">
+          <tr>
+            {["Tháng", "Lương cơ bản", "Lương thực nhận", "Chênh lệch"].map((head) => (
+              <th key={head} className="px-4 py-3 text-sm text-black font-medium">{head}</th>
+            ))}
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {data.map((row) => (
+            <tr key={row.month} className="border-t border-gray-200 hover:bg-gray-50">
+              <td className="px-4 py-3 text-black font-medium">Tháng {row.month}</td>
+              <td className="px-4 py-3 text-black">{formatCurrency(row.baseSalary)}</td>
+              <td className="px-4 py-3 text-black font-semibold">{formatCurrency(row.netIncome)}</td>
+              <td className={`px-4 py-3 font-medium ${row.difference > 0 ? "text-green-600" : "text-red-600"}`}>
+                {formatCurrency(row.difference)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    )}
   </div>
 );
 
 const SummaryCard = ({ summary, year }: { summary: any, year: string }) => (
   <div className="bg-white rounded-lg shadow-md p-6 space-y-4">
     <h3 className="font-semibold text-gray-600">Tổng thu nhập năm {year}</h3>
-    <p className="text-3xl font-bold text-gray-900">{formatCurrency(summary.total)}</p>
+    <p className="text-3xl font-bold text-gray-900">{formatCurrency(summary.total ?? 0)}</p>
     <div className="flex items-center gap-2">
-      <span className="px-2 py-1 text-sm font-bold bg-green-100 text-green-700 rounded-full">
-        {summary.change >= 0 ? `+${summary.change}` : summary.change}%
+      <span className="px-2 py-1 text-sm font-bold bg-slate-100 text-slate-600 rounded-full">
+        0%
       </span>
-      <span className="text-sm text-gray-500">so với năm trước</span>
+      <span className="text-sm text-gray-500">Chưa có dữ liệu so sánh</span>
     </div>
-    <div style={{ width: "100%", height: 80 }}>
-      <ResponsiveContainer>
-        <LineChart data={summary.trend} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
-          <Line type="monotone" dataKey="v" stroke="#10b981" strokeWidth={2} dot={false} />
-          <Tooltip content={() => null} />
-        </LineChart>
-      </ResponsiveContainer>
+    <div className="flex h-20 items-center justify-center rounded-lg border border-dashed border-slate-200 text-xs text-slate-400">
+      Chưa có dữ liệu xu hướng
     </div>
   </div>
 );
 
-const Footer = ({ onExport }: { onExport: () => void }) => (
-  <footer className="mt-8 pt-6 border-t border-gray-200">
-    <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-      <div className="flex items-center gap-6">
-        <Button onClick={onExport}>Xuất CSV/PDF</Button>
-        <div className="flex items-center gap-4">
-          <Checkbox label="Đã duyệt" />
-          <Checkbox label="Chưa duyệt" defaultChecked />
-        </div>
-      </div>
-      <p className="text-sm text-gray-500">© {new Date().getFullYear()} HR Pro</p>
-    </div>
-  </footer>
-);
-
 export default function IncomeReportPage() {
+  const [employeeList, setEmployeeList] = useState<Employee[]>(loadEmployees);
   const [year, setYear] = useState("2025");
-  const [employee, setEmployee] = useState(employees[0].name);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [employee, setEmployee] = useState(() => loadEmployees()[0]?.id ?? "");
+  const [reportVersion, setReportVersion] = useState(0);
+
+  useEffect(() => {
+    setEmployeeList(loadEmployees());
+  }, []);
+
+  useEffect(() => {
+    if (employeeList.length === 0) {
+      setEmployee("");
+      return;
+    }
+    if (!employee || !employeeList.find((emp) => emp.id === employee)) {
+      setEmployee(employeeList[0].id);
+    }
+  }, [employeeList, employee]);
+
+  useEffect(() => {
+    if (!employee) return;
+    // xử lý ngay khi vào để bắt kịp tháng mô phỏng còn thiếu
+    const targetEmployee = employeeList.find((emp) => emp.id === employee);
+    const created = simulateMonthlyReport(targetEmployee);
+    if (created) {
+      setReportVersion((prev) => prev + 1);
+    }
+    const interval = window.setInterval(() => {
+      const employeeObj = employeeList.find((emp) => emp.id === employee);
+      const added = simulateMonthlyReport(employeeObj);
+      if (added) {
+        setReportVersion((prev) => prev + 1);
+      }
+    }, KIEM_TRA_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [employee, employeeList]);
 
   const currentData = useMemo(() => {
-    return reportData[year]?.[employee] || { summary: { total: 0, change: 0, trend: [] }, details: [] };
-  }, [year, employee]);
-
-  const handleExport = () => {
-    setToastMessage("Đã tạo báo cáo thành công");
-    setTimeout(() => setToastMessage(null), 3000);
-  };
+    if (!employee) return { summary: { total: 0, change: 0, trend: [] }, details: [] };
+    const reports = loadIncomeReports(employee).filter((entry) => String(entry.year) === year);
+    const sorted = [...reports].sort((a, b) => a.month - b.month);
+    const details = sorted.map((entry) => ({
+      month: entry.month,
+      baseSalary: entry.baseSalary,
+      netIncome: entry.netIncome,
+      difference: entry.difference,
+    }));
+    const total = details.reduce((sum, item) => sum + item.netIncome, 0);
+    return { summary: { total, change: 0, trend: [] }, details };
+  }, [year, employee, reportVersion]);
 
   return (
     <div className="p-6 bg-gray-50 min-h-screen">
       <div className="max-w-7xl mx-auto">
         <Header />
-        <FilterBar year={year} setYear={setYear} employee={employee} setEmployee={setEmployee} employeeList={employees} />
+        <FilterBar
+          year={year}
+          setYear={setYear}
+          employee={employee}
+          setEmployee={setEmployee}
+          employeeList={employeeList}
+        />
 
         <main className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2">
@@ -214,21 +352,10 @@ export default function IncomeReportPage() {
           </div>
         </main>
 
-        <Footer onExport={handleExport} />
+        <footer className="mt-8 border-t border-gray-200 pt-6 text-sm text-gray-500">
+          Kết nối hệ thống thực tế để hiển thị dữ liệu báo cáo thu nhập.
+        </footer>
       </div>
-
-      {toastMessage && (
-        <div className="fixed bottom-4 right-4 bg-gray-800 text-white py-2 px-4 rounded-lg shadow-lg animate-fade-in-out">
-          {toastMessage}
-        </div>
-      )}
     </div>
   );
 }
-
-const Checkbox = ({ label, ...props }: { label: string } & React.InputHTMLAttributes<HTMLInputElement>) => (
-    <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-        <input type="checkbox" className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" {...props} />
-        {label}
-    </label>
-);

@@ -1,17 +1,24 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { v4 as uuidv4 } from 'uuid';
 import { Button } from "./Button";
 import { PositionTable } from "./PositionTable";
 import { AddPositionModal, type NewPositionData } from "./AddPositionModal";
 import { EditPositionModal, type PositionEditData } from "./EditPositionModal";
 import { Input } from "./Input";
+import type { Employee } from "./EmployeePage";
+import { EmployeesListModal } from "./EmployeesListModal";
+import { generatePositionShortCode } from "../../utils/employeeCode";
 
 export type Position = {
   id: string;
   maChucVu: string;
   tenChucVu: string;
+  moTa?: string;
+  capDo?: "ADMIN" | "MANAGER" | "STAFF" | "INTERN" | string;
+  quyenHan?: string[];
   trangThai: "active" | "inactive";
   visible: boolean;
+  soNhanSu?: number;
 };
 
 type Toast = {
@@ -21,28 +28,106 @@ type Toast = {
 
 export default function PositionPage() {
   const seed: Position[] = [
-    { id: "1", maChucVu: "GD", tenChucVu: "Giám đốc", trangThai: "active", visible: true },
-    { id: "2", maChucVu: "TP", tenChucVu: "Trưởng phòng", trangThai: "active", visible: true },
-    { id: "3", maChucVu: "NV", tenChucVu: "Nhân viên", trangThai: "inactive", visible: true },
+    {
+      id: "1",
+      maChucVu: "G",
+      tenChucVu: "Giám đốc điều hành",
+      moTa: "Quản lý toàn bộ hoạt động công ty",
+      capDo: "ADMIN",
+      quyenHan: ["Toàn quyền hệ thống", "Duyệt ngân sách"],
+      trangThai: "active",
+      visible: true,
+    },
+    {
+      id: "2",
+      maChucVu: "T",
+      tenChucVu: "Trưởng phòng",
+      moTa: "Quản lý nhân sự và KPI phòng ban",
+      capDo: "MANAGER",
+      quyenHan: ["Quản lý nhân viên", "Duyệt công", "Xem báo cáo"],
+      trangThai: "active",
+      visible: true,
+    },
+    {
+      id: "3",
+      maChucVu: "N",
+      tenChucVu: "Chuyên viên nhân sự",
+      moTa: "Quản lý hồ sơ và tuyển dụng",
+      capDo: "STAFF",
+      quyenHan: ["Thêm nhân viên", "Cập nhật hồ sơ"],
+      trangThai: "active",
+      visible: true,
+    },
   ];
 
-  const [data, setData] = useState<Position[]>(seed);
+  const [data, setData] = useState<Position[]>(() => {
+    const stored = localStorage.getItem("positionsData");
+    if (stored) {
+      try {
+        return JSON.parse(stored) as Position[];
+      } catch (error) {
+        console.warn("Không đọc được positionsData:", error);
+      }
+    }
+    localStorage.setItem("positionsData", JSON.stringify(seed));
+    return seed;
+  });
   const [q, setQ] = useState("");
   const [openAdd, setOpenAdd] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [editingPosition, setEditingPosition] = useState<Position | null>(null);
+  const [page, setPage] = useState(1);
+  const [employeeCounts, setEmployeeCounts] = useState<Record<string, number>>({});
+  const [positionEmployees, setPositionEmployees] = useState<Employee[]>([]);
+  const [selectedPosition, setSelectedPosition] = useState<Position | null>(null);
+  const [employeeModalOpen, setEmployeeModalOpen] = useState(false);
+  const PAGE_SIZE = 4;
 
   const filtered = useMemo(() => {
-    return data.filter((d) => {
+    const result = data.filter((d) => {
       if (q && !(d.tenChucVu.toLowerCase().includes(q.toLowerCase()) || d.maChucVu.toLowerCase().includes(q.toLowerCase())))
         return false;
       return true;
     });
+    const maxPage = Math.max(1, Math.ceil(result.length / PAGE_SIZE));
+    if (page > maxPage) {
+      setPage(maxPage);
+    }
+    return result;
   }, [data, q]);
 
+  useEffect(() => {
+    const syncEmployeeCounts = () => {
+      try {
+        const raw = localStorage.getItem("employeesData");
+        if (!raw) {
+          setEmployeeCounts({});
+          return;
+        }
+        const employees = JSON.parse(raw) as Employee[];
+        const counts = employees.reduce<Record<string, number>>((acc, emp) => {
+          acc[emp.position] = (acc[emp.position] || 0) + 1;
+          return acc;
+        }, {});
+        setEmployeeCounts(counts);
+      } catch (error) {
+        console.warn("Không đọc được employeesData:", error);
+        setEmployeeCounts({});
+      }
+    };
+
+    syncEmployeeCounts();
+    window.addEventListener("storage", syncEmployeeCounts);
+    window.addEventListener("focus", syncEmployeeCounts);
+    return () => {
+      window.removeEventListener("storage", syncEmployeeCounts);
+      window.removeEventListener("focus", syncEmployeeCounts);
+    };
+  }, []);
+
   const generatePosCode = (name: string) => {
-    return name.split(' ').map(word => word.charAt(0)).join('').toUpperCase().slice(0, 3);
-  }
+    return generatePositionShortCode(name) || "X";
+  };
 
   const addPosition = (pos: NewPositionData) => {
     const finalCode = pos.maChucVu || generatePosCode(pos.tenChucVu);
@@ -52,7 +137,11 @@ export default function PositionPage() {
       maChucVu: finalCode,
       visible: true
     };
-    setData((s) => [newPosition, ...s]);
+    setData((s) => {
+      const next = [newPosition, ...s];
+      localStorage.setItem("positionsData", JSON.stringify(next));
+      return next;
+    });
     showToast("Đã thêm chức vụ");
     setOpenAdd(false);
   };
@@ -60,7 +149,11 @@ export default function PositionPage() {
   const updatePosition = (updatedData: PositionEditData) => {
     if (!editingPosition) return;
 
-    setData(s => s.map(pos => pos.id === editingPosition.id ? { ...pos, ...updatedData } : pos));
+    setData(s => {
+      const next = s.map(pos => pos.id === editingPosition.id ? { ...pos, ...updatedData } : pos);
+      localStorage.setItem("positionsData", JSON.stringify(next));
+      return next;
+    });
     showToast("Đã cập nhật chức vụ");
     setEditingPosition(null);
   };
@@ -68,7 +161,11 @@ export default function PositionPage() {
   const deletePosition = (id: string) => {
     const confirmed = window.confirm("Bạn có chắc chắn muốn xoá chức vụ này?");
     if (confirmed) {
-      setData((s) => s.filter((pos) => pos.id !== id));
+      setData((s) => {
+        const next = s.filter((pos) => pos.id !== id);
+        localStorage.setItem("positionsData", JSON.stringify(next));
+        return next;
+      });
       showToast("Đã xóa chức vụ");
     }
   };
@@ -82,13 +179,43 @@ export default function PositionPage() {
   };
 
   const toggleVisibility = (id: string) => {
-    setData((s) =>
-      s.map((pos) => (pos.id === id ? { ...pos, visible: !pos.visible } : pos))
-    );
+    setData((s) => {
+      const next = s.map((pos) =>
+        pos.id === id ? { ...pos, visible: !pos.visible } : pos
+      );
+      localStorage.setItem("positionsData", JSON.stringify(next));
+      return next;
+    });
   };
 
   const handleEdit = (position: Position) => {
     setEditingPosition(position);
+  };
+
+  const handleViewEmployees = (position: Position) => {
+    setSelectedPosition(position);
+    try {
+      const raw = localStorage.getItem("employeesData");
+      if (!raw) {
+        setPositionEmployees([]);
+      } else {
+        const employees = JSON.parse(raw) as Employee[];
+        const filteredEmployees = employees.filter(
+          (emp) => emp.position === position.tenChucVu
+        );
+        setPositionEmployees(filteredEmployees);
+      }
+    } catch (error) {
+      console.warn("Không đọc được employeesData:", error);
+      setPositionEmployees([]);
+    }
+    setEmployeeModalOpen(true);
+  };
+
+  const closeEmployeeModal = () => {
+    setEmployeeModalOpen(false);
+    setPositionEmployees([]);
+    setSelectedPosition(null);
   };
 
   return (
@@ -105,13 +232,44 @@ export default function PositionPage() {
             </div>
         </div>
 
-        <PositionTable data={filtered} onDelete={deletePosition} onToggleVisibility={toggleVisibility} onEdit={handleEdit} />
+        <PositionTable
+          data={filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map((position) => ({
+            ...position,
+            soNhanSu: employeeCounts[position.tenChucVu] || 0,
+          }))}
+          totalCount={filtered.length}
+          page={page}
+          pageSize={PAGE_SIZE}
+          pageCount={Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))}
+          onPageChange={setPage}
+          onDelete={deletePosition}
+          onToggleVisibility={toggleVisibility}
+          onEdit={handleEdit}
+          onViewEmployees={handleViewEmployees}
+        />
 
         <div className="fixed bottom-4 right-4 space-y-2 z-50">
           {toasts.map((toast) => (<div key={toast.id} className="bg-gray-800 text-white py-2 px-4 rounded-lg shadow-lg animate-fade-in-out">{toast.message}</div>))}
         </div>
 
-        <AddPositionModal open={openAdd} onClose={() => setOpenAdd(false)} onSave={addPosition} generatedCode={"Nhập mã hoặc để trống để tạo tự động"} />
+        <EmployeesListModal
+          open={employeeModalOpen}
+          onClose={closeEmployeeModal}
+          title={
+            selectedPosition
+              ? `Nhân sự - ${selectedPosition.tenChucVu}`
+              : "Nhân sự theo chức vụ"
+          }
+          employees={positionEmployees}
+          description={
+            positionEmployees.length
+              ? `Có ${positionEmployees.length} nhân viên giữ chức vụ ${selectedPosition?.tenChucVu ?? ""}.`
+              : undefined
+          }
+          emptyDescription="Chưa có nhân viên nào giữ chức vụ này."
+        />
+
+        <AddPositionModal open={openAdd} onClose={() => setOpenAdd(false)} onSave={addPosition} />
 
         <EditPositionModal open={!!editingPosition} onClose={() => setEditingPosition(null)} position={editingPosition} onSave={updatePosition} />
 

@@ -56,3 +56,38 @@ export interface MonthlyPayroll {
   totalPay: number;
   status: 'draft' | 'approved' | 'paid';
 }
+
+export type AttendanceType = 'checkin' | 'checkout';
+
+export interface FaceEmbeddingRow {
+  employeeId: string;
+  embedding: number[];
+  createdAt: string;
+}
+
+export interface EnrollFacePayload {
+  employeeId: string;
+  embedding: number[];
+  snapshot?: string;
+}
+
+export interface EnrollFaceResponse {
+  employeeId: string;
+  createdAt: string;
+  source: 'remote' | 'local';
+}
+
+export interface FaceCheckPayload {
+  embedding: number[];
+  type: AttendanceType;
+  threshold?: number;
+}
+
+export interface FaceCheckResponse {
+  employeeId: string;
+  type: AttendanceType;
+  timestamp: string;
+  distance: number;
+  threshold: number;
+  source: 'remote' | 'local';
+}
