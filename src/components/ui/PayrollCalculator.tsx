@@ -1,4 +1,7 @@
+// src/components/ui/PayrollCalculator.tsx
 import { Link } from "react-router-dom";
+import { useEffect, useState, useMemo } from "react";
+import { payrollService, type PayrollReportEntry } from "../../services/payrollService";
 
 type PayrollCalculatorProps = {
   employeeName?: string | null;
@@ -6,8 +9,6 @@ type PayrollCalculatorProps = {
   employeeId?: string | null;
   dept?: string | null;
   position?: string | null;
-  salary?: number;
-  totalHours?: number;
 };
 
 
@@ -17,32 +18,54 @@ export const PayrollCalculator = ({
   employeeId,
   dept,
   position,
-  salary,
-  totalHours,
 }: PayrollCalculatorProps) => {
+
+  const [reportData, setReportData] = useState<PayrollReportEntry | null>(null);
+  const [loading, setLoading] = useState(true);
+  const currentMonth = useMemo(() => new Date().getMonth() + 1, []);
+  const currentYear = useMemo(() => new Date().getFullYear(), []);
+
+  useEffect(() => {
+    if (!employeeId) return;
+
+    const fetchPayroll = async () => {
+        setLoading(true);
+        try {
+            // Gọi API tính lương thực tế
+            const reports = await payrollService.listReport(currentMonth, currentYear);
+            const employeeReport = reports.find(r => r.employeeId.toString() === employeeId);
+            setReportData(employeeReport || null);
+        } catch (error) {
+            console.error("Lỗi tải báo cáo lương:", error);
+            setReportData(null);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    fetchPayroll();
+  }, [employeeId, currentMonth, currentYear]);
+
+
   const formatMoney = (value: number) =>
     Intl.NumberFormat("vi-VN", {
       style: "currency",
       currency: "VND",
     }).format(value);
 
-  const baseSalary = typeof salary === "number" ? salary : 0;
-  const hoursThisMonth = typeof totalHours === "number" ? totalHours : 0;
-  const standardHours = 40;
-  const overtimeHours = Math.max(0, hoursThisMonth - standardHours);
-  const overtimePay =
-    overtimeHours > 0 ? (baseSalary / standardHours) * overtimeHours * 1.5 : 0;
-  const totalSalary = baseSalary + overtimePay;
+  const baseSalary = reportData?.baseSalary ?? 0;
+  const hoursThisMonth = reportData?.totalHours ?? 0;
+  const overtimeHours = reportData?.overtimeHours ?? 0;
+  const overtimePay = reportData?.overtimePay ?? 0;
+  const totalSalary = reportData?.finalSalary ?? 0;
 
   const detailRows = [
-    { label: "Nhân viên", value: employeeName ?? "Chưa chọn" },
     { label: "Mã nhân viên", value: employeeCode ?? "—" },
-    { label: "ID hệ thống", value: employeeId ?? "—" },
     { label: "Phòng ban", value: dept ?? "—" },
     { label: "Chức vụ", value: position ?? "—" },
     {
       label: "Giờ làm tháng này",
-      value: typeof totalHours === "number" ? `${totalHours} giờ` : "—",
+      value: hoursThisMonth > 0 ? `${hoursThisMonth} giờ` : "—",
     },
   ];
 
@@ -54,7 +77,7 @@ export const PayrollCalculator = ({
     },
     {
       title: "Giờ làm thêm",
-      value: `${overtimeHours}h`,
+      value: `${overtimeHours.toFixed(2)}h`,
       description: "Áp dụng sau 40h/tuần",
     },
     {
@@ -63,12 +86,20 @@ export const PayrollCalculator = ({
       description: "Nhân hệ số 150%",
     },
     {
-      title: "Tổng lương dự kiến",
+      title: "Tổng lương thực nhận",
       value: totalSalary > 0 ? formatMoney(totalSalary) : "—",
-      description: "Bao gồm lương cơ bản + OT",
+      description: `Tháng ${currentMonth}/${currentYear}`,
       highlight: true,
     },
   ];
+  
+  if (loading) {
+    return (
+      <div className="p-6 bg-gray-50 min-h-screen flex items-center justify-center">
+        <p className="text-xl font-semibold text-blue-600">Đang tính toán lương thực tế...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -81,7 +112,7 @@ export const PayrollCalculator = ({
             Thông tin lương nhân viên
           </h1>
           <p className="mt-1 text-sm text-slate-500">
-            Tổng hợp thu nhập dựa trên dữ liệu chấm công và cấu hình hệ số.
+            Tổng hợp thu nhập dựa trên dữ liệu chấm công thực tế từ **`backendhi`**
           </p>
         </div>
         <Link
@@ -126,10 +157,10 @@ export const PayrollCalculator = ({
 
         <article className="rounded-2xl border border-slate-200 bg-gradient-to-br from-blue-50 via-white to-indigo-50 p-6 shadow-sm lg:col-span-2">
           <h2 className="text-lg font-semibold text-slate-900">
-            Tóm tắt thu nhập tháng này
+            Tóm tắt thu nhập tháng này ({currentMonth}/{currentYear})
           </h2>
           <p className="text-sm text-slate-500">
-            Dựa trên dữ liệu chấm công thực tế và hệ số làm thêm.
+            Dữ liệu được tính toán dựa trên giờ làm việc thực tế từ hệ thống chấm công.
           </p>
           <div className="mt-6 grid gap-4 md:grid-cols-2">
             {summaryCards.map(({ title, value, description, highlight }) => (
@@ -150,15 +181,6 @@ export const PayrollCalculator = ({
                 <p className="mt-1 text-xs text-slate-500">{description}</p>
               </div>
             ))}
-          </div>
-
-          <div className="mt-6 rounded-xl border border-blue-100 bg-white/90 p-4 text-sm text-slate-600">
-            <p className="font-semibold text-slate-800">Ghi chú</p>
-            <p>
-              Lương làm thêm mặc định áp dụng hệ số 150%. Có thể điều chỉnh hệ số
-              và ngưỡng giờ trong phần cấu hình của phòng nhân sự để phù hợp
-              chính sách công ty.
-            </p>
           </div>
         </article>
       </section>

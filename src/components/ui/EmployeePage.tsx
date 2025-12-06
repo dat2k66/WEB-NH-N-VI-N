@@ -1,17 +1,16 @@
-
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { v4 as uuidv4 } from 'uuid';
 import { Button } from "./Button";
 import { EmployeeTable } from "./EmployeeTable";
 import { AddEmployeeModal } from "./AddEmployeeModal";
 import { EditEmployeeModal, type EmployeeEditData } from "./EditEmployeeModal";
-import { FilterBar } from "./FilterBar"; // Đảm bảo import đúng component
+import { FilterBar } from "./FilterBar";
 import type { NewEmployeeData } from './AddEmployeeModal';
 import { EmployeeDetailModal } from "./EmployeeDetailModal";
 import { FaceRegistrationModal } from "./FaceRegistrationModal";
 import { AttendanceHistoryModal } from "./AttendanceHistoryModal";
-import { buildEmployeeCode, getNextJoinOrder, loadStoredDepartments, loadStoredPositions, normalizeEmployeesJoinOrder } from "../../utils/employeeCode";
+import { employeesService, type EmployeeApiResult } from "../../services/employeesService"; 
 
 export type Employee = {
   id: string;
@@ -33,37 +32,29 @@ type Toast = {
   message: string;
 };
 
+
+const mapApiToEmployee = (item: EmployeeApiResult): Employee => ({
+    id: String(item.id),
+    code: item.code,
+    name: item.name,
+    dept: item.dept,
+    position: item.position,
+    salary: item.salary,
+    status: item.status,
+    photo: item.photo ?? undefined,
+    taiKhoan: item.taiKhoan,
+    matKhau: item.matKhau,
+    visible: true,
+});
+
+
 export default function EmployeePage() {
   const navigate = useNavigate();
   const PAGE_SIZE = 4;
-  const seed: Employee[] = [
-    { id: "1", code: "PDT", name: "Nguyễn Minh Anh", dept: "Phòng Kinh Doanh", position: "Nhân viên", salary: 10000000, status: "active", visible: true, photo: "https://i.pravatar.cc/150?img=3", taiKhoan: "minhanh", matKhau: "123456" },
-    { id: "2", code: "PCT", name: "Nguyễn Minh Tạo", dept: "Trưởng phòng", position: "Trưởng phòng", salary: 20000000, status: "active", visible: true, photo: "https://i.pravatar.cc/150?img=15", taiKhoan: "taonguyen", matKhau: "123456" },
-    { id: "3", code: "PKT", name: "Trần Quỳnh", dept: "Chăm sóc KH", position: "Nhân viên", salary: 12000000, status: "inactive", visible: true, photo: "https://i.pravatar.cc/150?img=32", taiKhoan: "quynhtran", matKhau: "123456" },
-  ];
 
-  const ensureEmployeeSchema = (employees: Employee[]) => {
-    return normalizeEmployeesJoinOrder(employees).map((emp) => ({
-      ...emp,
-      taiKhoan: emp.taiKhoan ?? "",
-      matKhau: emp.matKhau ?? "",
-    }));
-  };
+  const [data, setData] = useState<Employee[]>([]);
+  const [dangTai, datDangTai] = useState(true); 
 
-  const [data, setData] = useState<Employee[]>(() => {
-    const stored = localStorage.getItem("employeesData");
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored) as Employee[];
-        return ensureEmployeeSchema(parsed);
-      } catch (error) {
-        console.warn("Không đọc được employeesData:", error);
-      }
-    }
-    const normalizedSeed = ensureEmployeeSchema(seed);
-    localStorage.setItem("employeesData", JSON.stringify(normalizedSeed));
-    return normalizedSeed;
-  });
   const [q, setQ] = useState("");
   const [dept, setDept] = useState("all");
   const [status, setStatus] = useState("all");
@@ -74,12 +65,45 @@ export default function EmployeePage() {
   const [faceEmployee, setFaceEmployee] = useState<Employee | null>(null);
   const [attendanceEmployee, setAttendanceEmployee] = useState<Employee | null>(null);
   const [page, setPage] = useState(1);
+  
+  const nextJoinOrder = 0; 
+
+  const showToast = useCallback((message: string) => {
+    const toastId = uuidv4();
+    setToasts((prevToasts) => [...prevToasts, { id: toastId, message }]);
+    setTimeout(() => {
+      setToasts((prevToasts) => prevToasts.filter((toast) => toast.id !== toastId));
+    }, 3000);
+  }, []);
+  
+  
+  const taiDuLieuNhanVien = useCallback(async () => {
+    datDangTai(true);
+    try {
+      const duLieuTuAPI = await employeesService.list();
+      const duLieuFormatted = duLieuTuAPI.map(mapApiToEmployee);
+      setData(duLieuFormatted);
+      // Ghi đè Local Storage để AttendancePage có thể đọc được
+      localStorage.setItem("employeesData", JSON.stringify(duLieuFormatted)); 
+    } catch (error) {
+      showToast("Lỗi tải dữ liệu nhân viên: " + (error as Error).message);
+      setData([]);
+    } finally {
+      datDangTai(false);
+    }
+  }, [showToast]);
+
+  
+  useEffect(() => {
+    taiDuLieuNhanVien();
+  }, [taiDuLieuNhanVien]);
+
 
   const filtered = useMemo(() => {
     return data.filter((d) => {
       if (dept !== "all" && d.dept !== dept) return false;
       if (status !== "all" && d.status !== status) return false;
-      if (q && !(d.name.toLowerCase().includes(q.toLowerCase())))
+      if (q && !(d.name.toLowerCase().includes(q.toLowerCase()) || d.code.toLowerCase().includes(q.toLowerCase())))
         return false;
       return true;
     });
@@ -110,87 +134,45 @@ export default function EmployeePage() {
     setStatus(value);
   };
 
-  const nextJoinOrder = useMemo(() => getNextJoinOrder(data), [data]);
-
-  const addEmployee = (emp: NewEmployeeData) => {
-    const departments = loadStoredDepartments();
-    const positions = loadStoredPositions();
-    const joinOrder = nextJoinOrder;
-    const finalCode = buildEmployeeCode({
-      deptName: emp.dept,
-      positionName: emp.position,
-      joinOrder,
-      departments,
-      positions,
-    });
-    const newEmployee: Employee = { 
-      ...emp, 
-      id: uuidv4(), 
-      code: finalCode,
-      joinOrder,
-      visible: true 
-    };
-    setData((s) => {
-      const next = [newEmployee, ...s];
-      localStorage.setItem("employeesData", JSON.stringify(next));
-      return next;
-    });
-    showToast("Đã thêm nhân viên");
-    setOpenAdd(false);
-  };
-
-  const updateEmployee = (updatedData: EmployeeEditData) => {
-    if (!editingEmployee) return;
-    const departments = loadStoredDepartments();
-    const positions = loadStoredPositions();
-    const joinOrder =
-      editingEmployee.joinOrder ??
-      data.find((emp) => emp.id === editingEmployee.id)?.joinOrder ??
-      1;
-    const shouldRegenerateCode =
-      updatedData.dept !== editingEmployee.dept ||
-      updatedData.position !== editingEmployee.position;
-
-    setData((s) => {
-      const next = s.map((emp) => {
-        if (emp.id !== editingEmployee.id) return emp;
-        const nextCode = shouldRegenerateCode
-          ? buildEmployeeCode({
-              deptName: updatedData.dept,
-              positionName: updatedData.position,
-              joinOrder,
-              departments,
-              positions,
-            })
-          : emp.code;
-        return { ...emp, ...updatedData, code: nextCode, joinOrder };
-      });
-      localStorage.setItem("employeesData", JSON.stringify(next));
-      return next;
-    });
-    showToast("Đã cập nhật nhân viên");
-    setEditingEmployee(null);
-  };
-
-  const deleteEmployee = (id: string) => {
-    const confirmed = window.confirm("Bạn có chắc chắn muốn xoá nhân viên này?");
-    if (confirmed) {
-      setData((s) => {
-        const next = s.filter((emp) => emp.id !== id);
-        localStorage.setItem("employeesData", JSON.stringify(next));
-        return next;
-      });
-      showToast("Đã xóa nhân viên");
+  const addEmployee = async (emp: NewEmployeeData) => {
+    try {
+        await employeesService.create(emp);
+        
+        showToast("Đã thêm nhân viên thành công!");
+        setOpenAdd(false);
+        taiDuLieuNhanVien(); 
+    } catch (error) {
+        showToast("Lỗi khi thêm nhân viên: " + (error as Error).message);
     }
   };
 
-  const showToast = (message: string) => {
-    const toastId = uuidv4();
-    setToasts((prevToasts) => [...prevToasts, { id: toastId, message }]);
-    setTimeout(() => {
-      setToasts((prevToasts) => prevToasts.filter((toast) => toast.id !== toastId));
-    }, 3000);
+  const updateEmployee = async (updatedData: EmployeeEditData) => {
+    if (!editingEmployee) return;
+    
+    try {
+        await employeesService.update(editingEmployee.id, updatedData);
+
+        showToast("Đã cập nhật nhân viên thành công!");
+        setEditingEmployee(null);
+        taiDuLieuNhanVien(); 
+    } catch (error) {
+        showToast("Lỗi khi cập nhật nhân viên: " + (error as Error).message);
+    }
   };
+
+  const deleteEmployee = async (id: string) => {
+    const confirmed = window.confirm("Bạn có chắc chắn muốn xoá nhân viên này?");
+    if (confirmed) {
+      try {
+        await employeesService.delete(id);
+        showToast("Đã xóa nhân viên");
+        taiDuLieuNhanVien(); 
+      } catch (error) {
+        showToast("Lỗi khi xóa nhân viên: " + (error as Error).message);
+      }
+    }
+  };
+
 
   const handleEdit = (employee: Employee) => {
     setEditingEmployee(employee);
@@ -209,6 +191,7 @@ export default function EmployeePage() {
   };
 
   const handleViewPayroll = (employee: Employee) => {
+    
     const workingHours = localStorage.getItem(`workingHours:${employee.id}`);
     let monthlyHours = "0";
 
@@ -246,6 +229,14 @@ export default function EmployeePage() {
     });
     navigate(`/admin/payroll?${query.toString()}`);
   };
+
+  if (dangTai) {
+    return (
+        <div className="p-6 bg-gray-50 min-h-screen flex items-center justify-center">
+            <p className="text-xl font-semibold text-blue-600">Đang tải dữ liệu nhân viên...</p>
+        </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-white p-6">
@@ -346,6 +337,7 @@ export default function EmployeePage() {
           onSaved={() => {
             showToast("Đã lưu khuôn mặt nhân viên");
             setFaceEmployee(null);
+            taiDuLieuNhanVien();
           }}
         />
         <AttendanceHistoryModal

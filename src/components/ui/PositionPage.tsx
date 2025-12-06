@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useCallback } from "react";
 import { v4 as uuidv4 } from 'uuid';
 import { Button } from "./Button";
 import { PositionTable } from "./PositionTable";
@@ -8,6 +8,8 @@ import { Input } from "./Input";
 import type { Employee } from "./EmployeePage";
 import { EmployeesListModal } from "./EmployeesListModal";
 import { generatePositionShortCode } from "../../utils/employeeCode";
+// IMPORT SERVICE MỚI
+import { positionsService } from "../../services/positionsService";
 
 export type Position = {
   id: string;
@@ -26,52 +28,24 @@ type Toast = {
   message: string;
 };
 
-export default function PositionPage() {
-  const seed: Position[] = [
-    {
-      id: "1",
-      maChucVu: "G",
-      tenChucVu: "Giám đốc điều hành",
-      moTa: "Quản lý toàn bộ hoạt động công ty",
-      capDo: "ADMIN",
-      quyenHan: ["Toàn quyền hệ thống", "Duyệt ngân sách"],
-      trangThai: "active",
-      visible: true,
-    },
-    {
-      id: "2",
-      maChucVu: "T",
-      tenChucVu: "Trưởng phòng",
-      moTa: "Quản lý nhân sự và KPI phòng ban",
-      capDo: "MANAGER",
-      quyenHan: ["Quản lý nhân viên", "Duyệt công", "Xem báo cáo"],
-      trangThai: "active",
-      visible: true,
-    },
-    {
-      id: "3",
-      maChucVu: "N",
-      tenChucVu: "Chuyên viên nhân sự",
-      moTa: "Quản lý hồ sơ và tuyển dụng",
-      capDo: "STAFF",
-      quyenHan: ["Thêm nhân viên", "Cập nhật hồ sơ"],
-      trangThai: "active",
-      visible: true,
-    },
-  ];
+// Hàm ánh xạ dữ liệu từ API (MySQL snake_case) sang format Frontend (camelCase)
+const mapApiToPosition = (item: any): Position => ({
+    id: String(item.id),
+    maChucVu: item.ma_chuc_vu,
+    tenChucVu: item.ten_chuc_vu,
+    moTa: item.mo_ta,
+    capDo: item.cap_do,
+    trangThai: item.trang_thai,
+    quyenHan: item.quyen_han ? JSON.parse(item.quyen_han) : [], // Parse JSON string
+    visible: true, // Mặc định hiển thị trên UI
+});
 
-  const [data, setData] = useState<Position[]>(() => {
-    const stored = localStorage.getItem("positionsData");
-    if (stored) {
-      try {
-        return JSON.parse(stored) as Position[];
-      } catch (error) {
-        console.warn("Không đọc được positionsData:", error);
-      }
-    }
-    localStorage.setItem("positionsData", JSON.stringify(seed));
-    return seed;
-  });
+
+export default function PositionPage() {
+  
+  const [data, setData] = useState<Position[]>([]);
+  const [dangTai, datDangTai] = useState(true); // Thêm state loading
+
   const [q, setQ] = useState("");
   const [openAdd, setOpenAdd] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -83,20 +57,34 @@ export default function PositionPage() {
   const [employeeModalOpen, setEmployeeModalOpen] = useState(false);
   const PAGE_SIZE = 4;
 
-  const filtered = useMemo(() => {
-    const result = data.filter((d) => {
-      if (q && !(d.tenChucVu.toLowerCase().includes(q.toLowerCase()) || d.maChucVu.toLowerCase().includes(q.toLowerCase())))
-        return false;
-      return true;
-    });
-    const maxPage = Math.max(1, Math.ceil(result.length / PAGE_SIZE));
-    if (page > maxPage) {
-      setPage(maxPage);
-    }
-    return result;
-  }, [data, q]);
+  const showToast = useCallback((message: string) => {
+    const toastId = uuidv4();
+    setToasts((prevToasts) => [...prevToasts, { id: toastId, message }]);
+    setTimeout(() => {
+      setToasts((prevToasts) => prevToasts.filter((toast) => toast.id !== toastId));
+    }, 3000);
+  }, []);
 
+  // Hàm tải dữ liệu chính từ Backend
+  const taiDuLieuChucVu = useCallback(async () => {
+    datDangTai(true);
+    try {
+      const duLieuTuAPI = await positionsService.list();
+      const duLieuFormatted = duLieuTuAPI.map(mapApiToPosition);
+      setData(duLieuFormatted);
+    } catch (error) {
+      showToast("Lỗi tải dữ liệu chức vụ: " + (error as Error).message);
+      setData([]);
+    } finally {
+      datDangTai(false);
+    }
+  }, [showToast]);
+
+  // THAY THẾ LOGIC LOAD LÚC KHỞI TẠO
   useEffect(() => {
+    taiDuLieuChucVu();
+
+    // Giữ nguyên logic đồng bộ số lượng nhân sự theo chức vụ (dùng tạm localStorage)
     const syncEmployeeCounts = () => {
       try {
         const raw = localStorage.getItem("employeesData");
@@ -123,70 +111,107 @@ export default function PositionPage() {
       window.removeEventListener("storage", syncEmployeeCounts);
       window.removeEventListener("focus", syncEmployeeCounts);
     };
-  }, []);
+  }, [taiDuLieuChucVu]); // Phụ thuộc vào hàm tải dữ liệu chính
+
+  const filtered = useMemo(() => {
+    const result = data.filter((d) => {
+      if (q && !(d.tenChucVu.toLowerCase().includes(q.toLowerCase()) || d.maChucVu.toLowerCase().includes(q.toLowerCase())))
+        return false;
+      return true;
+    });
+    const maxPage = Math.max(1, Math.ceil(result.length / PAGE_SIZE));
+    if (page > maxPage) {
+      setPage(maxPage);
+    }
+    return result;
+  }, [data, q, page]);
 
   const generatePosCode = (name: string) => {
     return generatePositionShortCode(name) || "X";
   };
 
-  const addPosition = (pos: NewPositionData) => {
-    const finalCode = pos.maChucVu || generatePosCode(pos.tenChucVu);
-    const newPosition: Position = {
-      ...pos,
-      id: uuidv4(),
-      maChucVu: finalCode,
-      visible: true
-    };
-    setData((s) => {
-      const next = [newPosition, ...s];
-      localStorage.setItem("positionsData", JSON.stringify(next));
-      return next;
-    });
-    showToast("Đã thêm chức vụ");
-    setOpenAdd(false);
-  };
-
-  const updatePosition = (updatedData: PositionEditData) => {
-    if (!editingPosition) return;
-
-    setData(s => {
-      const next = s.map(pos => pos.id === editingPosition.id ? { ...pos, ...updatedData } : pos);
-      localStorage.setItem("positionsData", JSON.stringify(next));
-      return next;
-    });
-    showToast("Đã cập nhật chức vụ");
-    setEditingPosition(null);
-  };
-
-  const deletePosition = (id: string) => {
-    const confirmed = window.confirm("Bạn có chắc chắn muốn xoá chức vụ này?");
-    if (confirmed) {
-      setData((s) => {
-        const next = s.filter((pos) => pos.id !== id);
-        localStorage.setItem("positionsData", JSON.stringify(next));
-        return next;
+  // THAY THẾ LOGIC THÊM CHỨC VỤ (CREATE)
+  const addPosition = async (pos: NewPositionData) => {
+    try {
+      const finalCode = pos.maChucVu || generatePosCode(pos.tenChucVu);
+      
+      await positionsService.create({ 
+          ...pos, 
+          maChucVu: finalCode,
+          quyenHan: pos.quyenHan, // Mảng sẽ được stringify ở Backend
       });
-      showToast("Đã xóa chức vụ");
+
+      showToast("Đã thêm chức vụ thành công!");
+      setOpenAdd(false);
+      taiDuLieuChucVu(); // Tải lại dữ liệu
+    } catch (error) {
+      showToast("Lỗi khi thêm chức vụ: " + (error as Error).message);
     }
   };
 
-  const showToast = (message: string) => {
-    const toastId = uuidv4();
-    setToasts((prevToasts) => [...prevToasts, { id: toastId, message }]);
-    setTimeout(() => {
-      setToasts((prevToasts) => prevToasts.filter((toast) => toast.id !== toastId));
-    }, 3000);
+  // THAY THẾ LOGIC CẬP NHẬT CHỨC VỤ (UPDATE)
+  const updatePosition = async (updatedData: PositionEditData) => {
+    if (!editingPosition) return;
+
+    try {
+        // Lấy lại các trường cần thiết khác để gửi đi
+        const payload = {
+            ...updatedData,
+            capDo: editingPosition.capDo, // Giữ nguyên cấp độ, mô tả
+            moTa: editingPosition.moTa,
+            quyenHan: editingPosition.quyenHan,
+        };
+        await positionsService.update(editingPosition.id, payload);
+
+        showToast("Đã cập nhật chức vụ thành công!");
+        setEditingPosition(null);
+        taiDuLieuChucVu(); // Tải lại dữ liệu
+    } catch (error) {
+        showToast("Lỗi khi cập nhật chức vụ: " + (error as Error).message);
+    }
   };
 
-  const toggleVisibility = (id: string) => {
-    setData((s) => {
-      const next = s.map((pos) =>
-        pos.id === id ? { ...pos, visible: !pos.visible } : pos
-      );
-      localStorage.setItem("positionsData", JSON.stringify(next));
-      return next;
-    });
+  // THAY THẾ LOGIC XÓA CHỨC VỤ (DELETE)
+  const deletePosition = async (id: string) => {
+    const confirmed = window.confirm("Bạn có chắc chắn muốn xoá chức vụ này?");
+    if (confirmed) {
+      try {
+        await positionsService.delete(id);
+        showToast("Đã xóa chức vụ!");
+        taiDuLieuChucVu(); // Tải lại dữ liệu
+      } catch (error) {
+        showToast("Lỗi khi xóa chức vụ: " + (error as Error).message);
+      }
+    }
   };
+
+  // THAY THẾ LOGIC ĐẢO TRẠNG THÁI (Toggle)
+  const toggleVisibility = async (id: string) => {
+    const position = data.find(p => p.id === id);
+    if (!position) return;
+
+    const nextStatus = position.trangThai === "active" ? "inactive" : "active";
+    const nextVisible = !position.visible;
+
+    try {
+        const payload = {
+            maChucVu: position.maChucVu,
+            tenChucVu: position.tenChucVu,
+            trangThai: nextStatus, 
+            capDo: position.capDo,
+            moTa: position.moTa,
+            quyenHan: position.quyenHan,
+        };
+        await positionsService.update(id, payload);
+
+        // Cập nhật state UI nhanh
+        setData(dsCu => dsCu.map(p => p.id === id ? {...p, trangThai: nextStatus, visible: nextVisible} : p));
+        showToast(`Đã chuyển trạng thái sang ${nextStatus === 'active' ? 'Hoạt động' : 'Ngưng'}`);
+    } catch (error) {
+        showToast("Lỗi khi thay đổi trạng thái: " + (error as Error).message);
+    }
+  };
+
 
   const handleEdit = (position: Position) => {
     setEditingPosition(position);
@@ -194,6 +219,7 @@ export default function PositionPage() {
 
   const handleViewEmployees = (position: Position) => {
     setSelectedPosition(position);
+    // Vẫn dùng tạm localStorage cho nhân viên
     try {
       const raw = localStorage.getItem("employeesData");
       if (!raw) {
@@ -217,6 +243,15 @@ export default function PositionPage() {
     setPositionEmployees([]);
     setSelectedPosition(null);
   };
+
+  // Logic hiển thị Loading State
+  if (dangTai) {
+    return (
+        <div className="p-6 bg-gray-50 min-h-screen flex items-center justify-center">
+            <p className="text-xl font-semibold text-purple-600">Đang tải dữ liệu chức vụ...</p>
+        </div>
+    );
+  }
 
   return (
     <div className="p-6 bg-gray-50 min-h-screen">

@@ -3,21 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import anhTrangChu from '@/assets/anhtrangchu.png';
 import anhDangNhap from '@/assets/dangnhap.png';
 import { adminAccount, verifyAdminLogin } from '@/services/mocks/auth';
+// IMPORT SERVICE MỚI
+import { employeesService } from '@/services/employeesService'; 
+
 import './welcome.css';
 
 const menuItems = ['Tài liệu', 'Hỗ trợ', 'Đăng nhập'];
 
-const docDanhSachNhanVien = () => {
-  if (typeof window === 'undefined') return [];
-  const stored = localStorage.getItem("employeesData");
-  if (!stored) return [];
-  try {
-    return JSON.parse(stored) ?? [];
-  } catch (error) {
-    console.warn("Không đọc được employeesData:", error);
-    return [];
-  }
-};
+// Loại bỏ hàm docDanhSachNhanVien vì ta sẽ dùng API
 
 const TrangChaoMung = () => {
   const navigate = useNavigate();
@@ -29,6 +22,7 @@ const TrangChaoMung = () => {
   const [taiKhoanNhanVien, setTaiKhoanNhanVien] = useState('');
   const [matKhauNhanVien, setMatKhauNhanVien] = useState('');
   const [thongBaoLoiNhanVien, setThongBaoLoiNhanVien] = useState<string | null>(null);
+  const [dangTai, setDangTai] = useState(false);
 
   const xuLyDangNhap = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -41,20 +35,29 @@ const TrangChaoMung = () => {
     }
   };
 
-  const xuLyDangNhapChamCong = (event: FormEvent<HTMLFormElement>) => {
+  // THAY THẾ LOGIC CHECK LOCAL STORAGE BẰNG API
+  const xuLyDangNhapChamCong = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const danhSach = docDanhSachNhanVien();
-    const timThay = danhSach.find(
-      (emp: { taiKhoan?: string; matKhau?: string }) =>
-        emp.taiKhoan === taiKhoanNhanVien && emp.matKhau === matKhauNhanVien
-    );
-    if (timThay && timThay.id) {
-      localStorage.setItem("attendanceEmployeeId", timThay.id);
-      setThongBaoLoiNhanVien(null);
-      setMoDangNhapChamCong(false);
-      navigate('/attendance');
-    } else {
-      setThongBaoLoiNhanVien('Tài khoản hoặc mật khẩu không đúng.');
+    setDangTai(true);
+    setThongBaoLoiNhanVien(null);
+    try {
+        const response = await employeesService.employeeLogin(taiKhoanNhanVien, matKhauNhanVien);
+        
+        if (response?.employeeId) {
+            localStorage.setItem("attendanceEmployeeId", response.employeeId);
+            setThongBaoLoiNhanVien(null);
+            setMoDangNhapChamCong(false);
+            navigate('/attendance');
+        } else {
+             // Dù API trả về 200 nhưng không có ID (lý thuyết)
+             setThongBaoLoiNhanVien('Lỗi không xác định khi đăng nhập.');
+        }
+
+    } catch (error) {
+        // Bắt lỗi 401 hoặc lỗi API
+        setThongBaoLoiNhanVien((error as Error).message);
+    } finally {
+        setDangTai(false);
     }
   };
 
@@ -234,8 +237,8 @@ const TrangChaoMung = () => {
                     />
                   </label>
                   {thongBaoLoiNhanVien && <p className="thong-bao-loi">{thongBaoLoiNhanVien}</p>}
-                  <button type="submit" className="nut-dang-nhap">
-                    Đăng nhập & chấm công
+                  <button type="submit" className="nut-dang-nhap" disabled={dangTai}>
+                    {dangTai ? 'Đang kiểm tra...' : 'Đăng nhập & chấm công'}
                   </button>
                 </form>
               </div>

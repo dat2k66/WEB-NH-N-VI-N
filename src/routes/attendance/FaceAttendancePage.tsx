@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import FaceAttendanceShell, {
   type FaceAttendanceShellHandle,
@@ -15,6 +15,16 @@ type AttendanceHistoryRecord = {
 };
 
 const HISTORY_LIMIT = 200;
+
+// Hàm định dạng tiền tệ an toàn (sử dụng dấu chấm làm phân cách hàng nghìn)
+const formatVND = (value: number) => {
+    const formattedNumber = new Intl.NumberFormat('vi-VN', {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+    }).format(Math.round(value));
+    return `${formattedNumber}₫`;
+};
+
 
 const addHistoryRecord = (employeeId: string, record: AttendanceHistoryRecord) => {
   if (typeof localStorage === 'undefined') return;
@@ -73,21 +83,10 @@ const loadEmployees = () => {
       console.warn("Không đọc được employeesData:", error);
     }
   }
-  return [
-    { id: "1", code: "PDT", name: "Nguyễn Minh Anh", dept: "Phòng Kinh Doanh", position: "Nhân viên", salary: 10000000, status: "active", visible: true },
-    { id: "2", code: "PCT", name: "Nguyễn Minh Tạo", dept: "Trưởng phòng", position: "Trưởng phòng", salary: 20000000, status: "active", visible: true },
-    { id: "3", code: "PKT", name: "Trần Quỳnh", dept: "Chăm sóc KH", position: "Nhân viên", salary: 12000000, status: "inactive", visible: true },
-  ];
+  return []; // TRẢ VỀ MẢNG RỖNG NẾU KHÔNG CÓ DỮ LIỆU ĐÃ TẢI
 };
 
-const dinhDangThoiGian = () =>
-  new Intl.DateTimeFormat('vi-VN', {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  }).format(new Date());
-
-const THOI_GIAN_MO_PHONG = 3600 / 5; // 5 giây thực tế = 1 giờ chấm công
+const THOI_GIAN_MO_PHONG = 3600 * 5; // 1 giây thực tế = 10 giờ chấm công
 
 const FaceAttendancePage = () => {
   const navigate = useNavigate();
@@ -101,97 +100,88 @@ const FaceAttendancePage = () => {
   const [historyRecords, setHistoryRecords] = useState<AttendanceHistoryRecord[]>([]);
   const [monthlyHours, setMonthlyHours] = useState(0);
   const [showHistory, setShowHistory] = useState(false);
-  const baseSalary = employee?.salary ?? 0;
-  const hourlyRate = baseSalary / 160;
-  const hasBaseSalary = monthlyHours >= 40;
-  const overtimeHours = Math.max(0, monthlyHours - 40);
-  const overtimePay = hasBaseSalary ? overtimeHours * hourlyRate : 0;
-  const projectedSalary = hasBaseSalary ? baseSalary + overtimePay : 0;
+  const [showSalaryDetail, setShowSalaryDetail] = useState(false); 
+  
+const baseSalary = Number(employee?.salary) || 0;
+const hourlyRate = baseSalary / 160;
+const hasBaseSalary = monthlyHours >= 40;
+const overtimeHours = Math.max(0, monthlyHours - 40);
+const overtimePay = hasBaseSalary ? overtimeHours * hourlyRate * 1.5 : 0; // Thêm *1.5 cho OT
+const projectedSalary = baseSalary + overtimePay; // Total Salary = Base + OT
+  
+  const capNhatGioLamThangNay = useCallback((gioMoi: number) => {
+    if (!employee || gioMoi <= 0) return;
+    const now = new Date();
+    const key = `workingHours:${employee.id}`;
+    const nextHours = Number((monthlyHours + gioMoi).toFixed(2));
+    const payload = {
+      year: now.getFullYear(),
+      month: now.getMonth() + 1,
+      hours: nextHours,
+    };
+    setMonthlyHours(nextHours);
+    localStorage.setItem(key, JSON.stringify(payload));
+  }, [employee, monthlyHours]);
 
+
+  // HÀM KIỂM TRA TRẠNG THÁI VÀ ĐỒNG BỘ DỮ LIỆU
+  const syncEmployeeData = useCallback(async (emp: any) => {
+      if (!emp) {
+          setHasRegisteredFace(false);
+          setHistoryRecords([]);
+          setMonthlyHours(0);
+          return;
+      }
+      
+      // 1. Kiểm tra trạng thái đăng ký khuôn mặt TỪ API
+      const registered = await attendanceService.hasFaceEnrollment(emp.id);
+      setHasRegisteredFace(registered);
+      
+      // 2. Tải lịch sử và giờ làm từ Local Storage (Chưa migrate Attendance History)
+      setHistoryRecords(loadHistory(emp.id).reverse());
+      setMonthlyHours(readMonthlyHours(emp.id));
+
+  }, []);
+
+  // USE EFFECT CHÍNH: Tải dữ liệu nhân viên từ Local Storage (đã được ghi từ EmployeePage)
   useEffect(() => {
     const storedId = localStorage.getItem("attendanceEmployeeId");
     if (!storedId) {
       navigate('/', { replace: true });
       return;
     }
-    const foundEmployee = employees.find((emp) => emp.id === storedId);
+    
+    // Đảm bảo dữ liệu nhân viên được load đầy đủ
+    const foundEmployee = employees.find((emp: any) => emp.id === storedId); 
+    
     if (foundEmployee) {
       setEmployee(foundEmployee);
-      setHistoryRecords(loadHistory(foundEmployee.id).reverse());
-      setMonthlyHours(readMonthlyHours(foundEmployee.id));
+      syncEmployeeData(foundEmployee); // Gọi hàm sync dữ liệu ngay
     } else {
+      // Trường hợp hiếm: ID có trong local storage nhưng không có trong danh sách employees
       navigate('/', { replace: true });
     }
-  }, [employees, navigate]);
-  useEffect(() => {
-    let active = true;
-    if (!employee) {
-      setHasRegisteredFace(false);
-      setHistoryRecords([]);
-      setMonthlyHours(0);
-      setShowHistory(false);
-      return;
-    }
-    (async () => {
-      const registered = await attendanceService.hasFaceEnrollment(employee.id);
-      if (active) setHasRegisteredFace(registered);
-    })();
-    setHistoryRecords(loadHistory(employee.id).reverse());
-    setMonthlyHours(readMonthlyHours(employee.id));
-    setShowHistory(false);
-    return () => {
-      active = false;
-    };
-  }, [employee]);
+    
+  }, [employees, navigate, syncEmployeeData]); 
+
   const [checkInTime, setCheckInTime] = useState<Date | null>(null);
-const [checkOutTime, setCheckOutTime] = useState<Date | null>(null);
-const [tongGioThangNay, setTongGioThangNay] = useState(0);
+  const [checkOutTime, setCheckOutTime] = useState<Date | null>(null);
 
-const capNhatGioLamThangNay = (gioMoi: number) => {
-  if (!employee || gioMoi <= 0) return;
-  const now = new Date();
-  const key = `workingHours:${employee.id}`;
-  const nextHours = Number((tongGioThangNay + gioMoi).toFixed(2));
-  const payload = {
-    year: now.getFullYear(),
-    month: now.getMonth() + 1,
-    hours: nextHours,
-  };
-  setTongGioThangNay(nextHours);
-  localStorage.setItem(key, JSON.stringify(payload));
+
+const tinhThoiGianLam = (inTime: Date, outTime: Date) => {
+  const diffMs = outTime.getTime() - inTime.getTime();
+  const minutes = diffMs / (1000 * 60);
+  const hours = minutes / 60;
+
+  const lunchBreak = 1; // giờ thực tế
+  const hasLunchBreak = inTime.getHours() < 12 && outTime.getHours() > 13;
+
+  const realHours = hasLunchBreak ? hours - lunchBreak : hours;
+  const simulatedHours = Math.max(0, Number((realHours * THOI_GIAN_MO_PHONG).toFixed(2)));
+
+  capNhatGioLamThangNay(simulatedHours);
+  return simulatedHours;
 };
-
-useEffect(() => {
-  if (!employee) return;
-  const now = new Date();
-  const key = `workingHours:${employee.id}`;
-  const stored = localStorage.getItem(key);
-  if (stored) {
-    try {
-      const parsed = JSON.parse(stored) as {
-        year: number;
-        month: number;
-        hours: number;
-      };
-      if (
-        parsed.year === now.getFullYear() &&
-        parsed.month === now.getMonth() + 1
-      ) {
-        setTongGioThangNay(Number(parsed.hours) || 0);
-        return;
-      }
-    } catch (error) {
-      console.warn("Không đọc được workingHours:", error);
-    }
-  }
-  const payload = {
-    year: now.getFullYear(),
-    month: now.getMonth() + 1,
-    hours: 0,
-  };
-  setTongGioThangNay(0);
-  localStorage.setItem(key, JSON.stringify(payload));
-}, [employee]);
 
   const xuLyChamCong = async (kieu: 'in' | 'out') => {
     if (!employee) {
@@ -200,12 +190,18 @@ useEffect(() => {
       setTimeout(() => setThongBao(null), 4000);
       return;
     }
-    if (!hasRegisteredFace) {
+    
+    // QUAN TRỌNG: Kiểm tra trạng thái đã đăng ký lần nữa trước khi chấm công
+    const isRegistered = await attendanceService.hasFaceEnrollment(employee.id);
+    setHasRegisteredFace(isRegistered);
+
+    if (!isRegistered) {
       setThongBao("Không tìm thấy dữ liệu khuôn mặt. Vui lòng đăng ký trước.");
       setLoaiThongBao(null);
       setTimeout(() => setThongBao(null), 4000);
       return;
     }
+    
     const videoElement = shellRef.current?.getVideoElement();
     if (!videoElement) {
       setThongBao("Không tìm thấy camera. Vui lòng kiểm tra lại thiết bị.");
@@ -213,6 +209,7 @@ useEffect(() => {
       setTimeout(() => setThongBao(null), 4000);
       return;
     }
+    
     setDangChamCong(true);
     try {
       const result = await captureFaceDescriptor(videoElement);
@@ -222,17 +219,21 @@ useEffect(() => {
         setTimeout(() => setThongBao(null), 4000);
         return;
       }
+      
+      // GỌI API CHECKIN VỚI LOGIC FIX PHÂN TÍCH JSON BÊN BACKEND
       const response = await attendanceService.checkInWithFace({
         embedding: descriptorToArray(result.descriptor),
         type: kieu === 'in' ? 'checkin' : 'checkout',
         threshold: 0.5,
       });
+
       if (response.employeeId !== employee.id) {
         setThongBao("Khuôn mặt không khớp với nhân viên đang chọn.");
         setLoaiThongBao(null);
         setTimeout(() => setThongBao(null), 4000);
         return;
       }
+      
       const eventTime = new Date(response.timestamp);
       const noiDung =
         kieu === 'in'
@@ -241,8 +242,10 @@ useEffect(() => {
       setThongBao(noiDung);
       setLoaiThongBao(kieu);
       setTimeout(() => setThongBao(null), 4000);
+      
       const lastCheckIn = checkInTime;
       let workedHours: number | undefined;
+      
       if (kieu === "in") {
         setCheckInTime(eventTime);
         setCheckOutTime(null);
@@ -258,8 +261,10 @@ useEffect(() => {
         timestamp: eventTime.toISOString(),
         durationHours: workedHours,
       });
+      // Cập nhật lại lịch sử và giờ làm sau khi chấm công
       setHistoryRecords(loadHistory(employee.id).reverse());
       setMonthlyHours(readMonthlyHours(employee.id));
+      
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Không thể chấm công bằng khuôn mặt.";
@@ -270,23 +275,7 @@ useEffect(() => {
       setDangChamCong(false);
     }
   };
- const [soGioLam, setSoGioLam] = useState(0);
 
-const tinhThoiGianLam = (inTime: Date, outTime: Date) => {
-  const diffMs = outTime.getTime() - inTime.getTime();
-  const minutes = diffMs / (1000 * 60);
-  const hours = minutes / 60;
-
-  const lunchBreak = 1; // giờ thực tế
-  const hasLunchBreak = inTime.getHours() < 12 && outTime.getHours() > 13;
-
-  const realHours = hasLunchBreak ? hours - lunchBreak : hours;
-  const simulatedHours = Math.max(0, Number((realHours * THOI_GIAN_MO_PHONG).toFixed(2)));
-
-  setSoGioLam(simulatedHours);
-  capNhatGioLamThangNay(simulatedHours);
-  return simulatedHours;
-};
 
   return (
     <div className="trang-cham-cong">
@@ -374,35 +363,75 @@ const tinhThoiGianLam = (inTime: Date, outTime: Date) => {
                 </div>
                 {showHistory && (
                   <div className="mt-4 space-y-4">
-                    <div className="grid gap-3 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm md:grid-cols-3">
-                      <div className="rounded-xl bg-slate-50 p-3">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                          Tổng số giờ đã làm
-                        </p>
-                        <p className="text-2xl font-bold text-slate-900 mt-1">{monthlyHours.toFixed(2)}h</p>
-                      </div>
-                      <div className="rounded-xl bg-slate-50 p-3">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                          Tổng tiền lương dự kiến
-                        </p>
-                        <p className="text-2xl font-bold text-emerald-600 mt-1">
-                          {projectedSalary.toLocaleString('vi-VN')}₫
-                        </p>
-                        <p className="text-[11px] text-slate-500 mt-1">
-                          {hasBaseSalary
-                            ? overtimeHours > 0
-                              ? `Bao gồm ${overtimeHours.toFixed(2)}h làm thêm (+${overtimePay.toLocaleString('vi-VN')}₫)`
-                              : 'Đã đủ 40 giờ, hiển thị lương cơ bản'
-                            : 'Chưa đủ 40 giờ để nhận lương cơ bản'}
-                        </p>
-                      </div>
-                      <div className="rounded-xl bg-slate-50 p-3">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                          Tổng lần chấm công
-                        </p>
-                        <p className="text-2xl font-bold text-slate-900 mt-1">{historyRecords.length}</p>
-                      </div>
+                    {/* TÁI CẤU TRÚC KHỐI THỐNG KÊ */}
+                    <div className="grid gap-3 md:grid-cols-2">
+                        {/* 1. Tổng giờ đã làm */}
+                        <div className="rounded-xl bg-slate-50 p-3">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                Tổng số giờ đã làm
+                            </p>
+                            <p className="text-2xl font-bold text-slate-900 mt-1">{monthlyHours.toFixed(2)}h</p>
+                        </div>
+
+                        {/* 2. Tổng lần chấm công */}
+                        <div className="rounded-xl bg-slate-50 p-3">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                Tổng lần chấm công
+                            </p>
+                            <p className="text-2xl font-bold text-slate-900 mt-1">{historyRecords.length}</p>
+                        </div>
                     </div>
+                    
+                    {/* 3. Tổng tiền lương dự kiến (Chuyển xuống dưới, toàn màn hình và làm nút bấm) */}
+                    <button
+                        type="button"
+                        className="w-full text-left rounded-xl border border-emerald-100 bg-emerald-50/70 p-3 transition hover:bg-emerald-100"
+                        onClick={() => setShowSalaryDetail((prev) => !prev)}
+                    >
+                        <p className="text-xs font-semibold uppercase tracking-wide text-emerald-600">
+                            Tổng tiền lương dự kiến {showSalaryDetail ? '↑' : '↓'}
+                        </p>
+                        <p className="text-3xl font-bold text-emerald-800 mt-1">
+                            {formatVND(projectedSalary)}
+                        </p>
+                    </button>
+
+                    {/* 4. Chi tiết Lương (Hiển thị khi bấm vào) */}
+                    {showSalaryDetail && (
+                        <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm text-sm">
+                            <p className="font-semibold text-slate-700 mb-2">Chi tiết tính toán:</p>
+                            <dl className="space-y-1">
+                                <div className="flex justify-between">
+                                    <dt className="text-slate-500">Lương cơ bản tháng</dt>
+                                    <dd className="font-medium">{formatVND(baseSalary)}</dd>
+                                </div>
+                                <div className="flex justify-between">
+                                    <dt className="text-slate-500">Giờ làm tiêu chuẩn (Mốc)</dt>
+                                    <dd className="font-medium">40 giờ</dd>
+                                </div>
+                                <div className="flex justify-between">
+                                    <dt className="text-slate-500">Giờ làm thêm</dt>
+                                    <dd className={`font-medium ${overtimeHours > 0 ? 'text-orange-600' : ''}`}>{overtimeHours.toFixed(2)} giờ</dd>
+                                </div>
+                                <div className="flex justify-between">
+                                    <dt className="text-slate-500">Lương làm thêm (Hệ số 1.5)</dt>
+                                    <dd className="font-medium text-orange-600">{formatVND(overtimePay)}</dd>
+                                </div>
+                                <hr className="my-2 border-slate-100" />
+                                <div className="flex justify-between">
+                                    <dt className="font-bold">TỔNG THỰC NHẬN</dt>
+                                    <dd className="font-bold text-emerald-700">{formatVND(projectedSalary)}</dd>
+                                </div>
+                            </dl>
+                            <p className="text-xs text-slate-500 mt-3">
+                                {hasBaseSalary
+                                    ? `Đã đủ 40 giờ. Lương tính theo: LCB + OT * 1.5`
+                                    : 'Chưa đủ 40 giờ. Lương dự kiến bằng Lương cơ bản.'}
+                            </p>
+                        </div>
+                    )}
+
+
                     <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
                       <p className="text-sm font-semibold text-slate-700 mb-3">Lịch sử chấm công gần đây</p>
                       {historyRecords.length === 0 ? (

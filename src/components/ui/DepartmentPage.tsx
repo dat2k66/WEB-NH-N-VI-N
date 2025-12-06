@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useCallback } from "react";
 import { v4 as uuidv4 } from 'uuid';
 import { Button } from "./Button";
 import { DepartmentTable } from "./DepartmentTable";
@@ -8,14 +8,17 @@ import { Input } from "./Input";
 import type { Employee } from "./EmployeePage";
 import { EmployeesListModal } from "./EmployeesListModal";
 import { generateDepartmentCode } from "../../utils/employeeCode";
+// IMPORT SERVICE MỚI
+import { departmentsService } from "../../services/departmentsService"; 
 
+// Kiểu dữ liệu chuẩn của Frontend (cần ánh xạ từ API Result)
 export type Department = {
   id: string;
   maPhong: string;
   tenPhong: string;
   namThanhLap: number;
   trangThai: "active" | "inactive";
-  visible: boolean;
+  visible: boolean; 
 };
 
 type ThongBao = {
@@ -23,25 +26,23 @@ type ThongBao = {
   noiDung: string;
 };
 
-export default function DepartmentPage() {
-  const duLieuKhoiTao: Department[] = [
-    { id: "1", maPhong: "PKD", tenPhong: "Phòng Kinh Doanh", namThanhLap: 2020, trangThai: "active", visible: true },
-    { id: "2", maPhong: "PNS", tenPhong: "Phòng Nhân Sự", namThanhLap: 2019, trangThai: "active", visible: true },
-    { id: "3", maPhong: "PKT", tenPhong: "Phòng Kế Toán", namThanhLap: 2018, trangThai: "inactive", visible: true },
-  ];
+// Hàm ánh xạ dữ liệu từ API (MySQL snake_case) sang format Frontend (camelCase)
+const mapApiToDepartment = (item: any): Department => ({
+    id: String(item.id),
+    maPhong: item.ma_phong,
+    tenPhong: item.ten_phong,
+    namThanhLap: item.nam_thanh_lap,
+    trangThai: item.trang_thai,
+    visible: true, // Mặc định hiển thị trên UI
+});
 
-  const [danhSachPhongBan, capNhatDanhSachPhongBan] = useState<Department[]>(() => {
-    const duLieuLuuTru = localStorage.getItem("departmentsData");
-    if (duLieuLuuTru) {
-      try {
-        return JSON.parse(duLieuLuuTru) as Department[];
-      } catch (error) {
-        console.warn("Không đọc được departmentsData:", error);
-      }
-    }
-    localStorage.setItem("departmentsData", JSON.stringify(duLieuKhoiTao));
-    return duLieuKhoiTao;
-  });
+
+export default function DepartmentPage() {
+  
+  const [danhSachPhongBan, capNhatDanhSachPhongBan] = useState<Department[]>([]);
+  const [dangTai, datDangTai] = useState(true); // Thêm state loading
+  
+  // ... các states khác giữ nguyên ...
   const [tuKhoa, capNhatTuKhoa] = useState("");
   const [moThemPhongBan, datMoThemPhongBan] = useState(false);
   const [danhSachThongBao, capNhatThongBao] = useState<ThongBao[]>([]);
@@ -53,10 +54,38 @@ export default function DepartmentPage() {
   const [phongDuocChon, capNhatPhongDuocChon] = useState<Department | null>(null);
   const SO_MUC_MOI_TRANG = 4;
 
+  const hienThongBao = useCallback((noiDung: string) => {
+    const idThongBao = uuidv4();
+    capNhatThongBao((dsCu) => [...dsCu, { id: idThongBao, noiDung }]);
+    setTimeout(() => {
+      capNhatThongBao((dsCu) => dsCu.filter((tb) => tb.id !== idThongBao));
+    }, 3000);
+  }, []);
+
+  // Hàm tải dữ liệu chính từ Backend
+  const taiDuLieuPhongBan = useCallback(async () => {
+    datDangTai(true);
+    try {
+      const duLieuTuAPI = await departmentsService.list();
+      const duLieuFormatted = duLieuTuAPI.map(mapApiToDepartment);
+      capNhatDanhSachPhongBan(duLieuFormatted);
+    } catch (error) {
+      hienThongBao("Lỗi tải dữ liệu phòng ban: " + (error as Error).message);
+      capNhatDanhSachPhongBan([]);
+    } finally {
+      datDangTai(false);
+    }
+  }, [hienThongBao]);
+
+
+  // THAY THẾ LOGIC LOAD LÚC KHỞI TẠO
   useEffect(() => {
+    taiDuLieuPhongBan();
+
+    // Logic đồng bộ nhân sự theo phòng (vẫn phải dùng tạm localStorage cho nhân viên)
     const dongBoNhanSuTheoPhong = () => {
       try {
-        const raw = localStorage.getItem("employeesData");
+        const raw = localStorage.getItem("employeesData"); 
         if (!raw) {
           capNhatSoNhanSuTheoPhong({});
           return;
@@ -80,7 +109,8 @@ export default function DepartmentPage() {
       window.removeEventListener("storage", dongBoNhanSuTheoPhong);
       window.removeEventListener("focus", dongBoNhanSuTheoPhong);
     };
-  }, []);
+  }, [taiDuLieuPhongBan]);
+
 
   const danhSachDaLoc = useMemo(() => {
     const ketQua = danhSachPhongBan.filter((phong) => {
@@ -105,65 +135,86 @@ export default function DepartmentPage() {
     return generateDepartmentCode(tenPhong);
   };
 
-  const themPhongBan = (phongMoi: NewDepartmentData) => {
-    const maPhong = phongMoi.maPhong || taoMaPhongBan(phongMoi.tenPhong);
-    const phongBan = {
-      ...phongMoi,
-      id: uuidv4(),
-      maPhong,
-      visible: true,
-    };
-    capNhatDanhSachPhongBan((dsCu) => {
-      const danhSachMoi = [phongBan, ...dsCu];
-      localStorage.setItem("departmentsData", JSON.stringify(danhSachMoi));
-      return danhSachMoi;
-    });
-    hienThongBao("Đã thêm phòng ban");
-    datMoThemPhongBan(false);
-  };
-
-  const capNhatPhongBan = (duLieuMoi: DepartmentEditData) => {
-    if (!phongDangSua) return;
-    capNhatDanhSachPhongBan((dsCu) => {
-      const danhSachMoi = dsCu.map((phong) =>
-        phong.id === phongDangSua.id ? { ...phong, ...duLieuMoi } : phong
-      );
-      localStorage.setItem("departmentsData", JSON.stringify(danhSachMoi));
-      return danhSachMoi;
-    });
-    hienThongBao("Đã cập nhật phòng ban");
-    capNhatPhongDangSua(null);
-  };
-
-  const xoaPhongBan = (id: string) => {
-    const xacNhan = window.confirm("Bạn có chắc chắn muốn xoá phòng ban này?");
-    if (xacNhan) {
-      capNhatDanhSachPhongBan((dsCu) => {
-        const danhSachMoi = dsCu.filter((phong) => phong.id !== id);
-        localStorage.setItem("departmentsData", JSON.stringify(danhSachMoi));
-        return danhSachMoi;
+  // THAY THẾ LOGIC THÊM PHÒNG BAN (CREATE)
+  const themPhongBan = async (phongMoi: NewDepartmentData) => {
+    try {
+      const maPhong = phongMoi.maPhong || taoMaPhongBan(phongMoi.tenPhong);
+      
+      await departmentsService.create({
+          maPhong,
+          tenPhong: phongMoi.tenPhong,
+          namThanhLap: phongMoi.namThanhLap,
+          trangThai: phongMoi.trangThai
       });
-      hienThongBao("Đã xóa phòng ban");
+
+      hienThongBao("Đã thêm phòng ban thành công!");
+      datMoThemPhongBan(false);
+      taiDuLieuPhongBan(); // Tải lại dữ liệu sau khi thêm
+    } catch (error) {
+      hienThongBao("Lỗi khi thêm phòng ban: " + (error as Error).message);
     }
   };
 
-  const hienThongBao = (noiDung: string) => {
-    const idThongBao = uuidv4();
-    capNhatThongBao((dsCu) => [...dsCu, { id: idThongBao, noiDung }]);
-    setTimeout(() => {
-      capNhatThongBao((dsCu) => dsCu.filter((tb) => tb.id !== idThongBao));
-    }, 3000);
+  // THAY THẾ LOGIC CẬP NHẬT PHÒNG BAN (UPDATE)
+  const capNhatPhongBan = async (duLieuMoi: DepartmentEditData) => {
+    if (!phongDangSua) return;
+
+    try {
+        await departmentsService.update(phongDangSua.id, {
+            maPhong: duLieuMoi.maPhong,
+            tenPhong: duLieuMoi.tenPhong,
+            namThanhLap: duLieuMoi.namThanhLap,
+            trangThai: duLieuMoi.trangThai,
+        });
+
+        hienThongBao("Đã cập nhật phòng ban thành công!");
+        capNhatPhongDangSua(null);
+        taiDuLieuPhongBan(); // Tải lại dữ liệu sau khi cập nhật
+    } catch (error) {
+        hienThongBao("Lỗi khi cập nhật phòng ban: " + (error as Error).message);
+    }
   };
 
-  const daoTrangThaiHienThi = (id: string) => {
-    capNhatDanhSachPhongBan((dsCu) => {
-      const danhSachMoi = dsCu.map((phong) =>
-        phong.id === id ? { ...phong, visible: !phong.visible } : phong
-      );
-      localStorage.setItem("departmentsData", JSON.stringify(danhSachMoi));
-      return danhSachMoi;
-    });
+  // THAY THẾ LOGIC XÓA PHÒNG BAN (DELETE)
+  const xoaPhongBan = async (id: string) => {
+    const xacNhan = window.confirm("Bạn có chắc chắn muốn xoá phòng ban này?");
+    if (xacNhan) {
+      try {
+        await departmentsService.delete(id);
+        hienThongBao("Đã xóa phòng ban!");
+        // Tải lại dữ liệu sau khi xóa
+        taiDuLieuPhongBan();
+      } catch (error) {
+        hienThongBao("Lỗi khi xóa phòng ban: " + (error as Error).message);
+      }
+    }
   };
+
+  // THAY THẾ LOGIC ĐẢO TRẠNG THÁI (Toggle)
+  // GỌI API UPDATE ĐỂ THAY ĐỔI TRẠNG THÁI DB
+  const daoTrangThaiHienThi = async (id: string) => {
+    const phong = danhSachPhongBan.find(p => p.id === id);
+    if (!phong) return;
+
+    const nextStatus = phong.trangThai === "active" ? "inactive" : "active";
+    const nextVisible = !phong.visible; 
+
+    try {
+        await departmentsService.update(id, {
+            maPhong: phong.maPhong,
+            tenPhong: phong.tenPhong,
+            namThanhLap: phong.namThanhLap,
+            trangThai: nextStatus, // Gửi trạng thái mới lên DB
+        });
+
+        // Cập nhật state UI nhanh
+        capNhatDanhSachPhongBan(dsCu => dsCu.map(p => p.id === id ? {...p, trangThai: nextStatus, visible: nextVisible} : p));
+        hienThongBao(`Đã chuyển trạng thái sang ${nextStatus === 'active' ? 'Hoạt động' : 'Ngưng'}`);
+    } catch (error) {
+        hienThongBao("Lỗi khi thay đổi trạng thái: " + (error as Error).message);
+    }
+  };
+
 
   const chonPhongBanSua = (phong: Department) => {
     capNhatPhongDangSua(phong);
@@ -171,6 +222,7 @@ export default function DepartmentPage() {
 
   const xemNhanSuPhong = (phong: Department) => {
     capNhatPhongDuocChon(phong);
+    // Vẫn dùng tạm localStorage cho nhân viên, vì chưa migrate Employee CRUD
     try {
       const duLieuNhanVien = localStorage.getItem("employeesData");
       if (!duLieuNhanVien) {
@@ -192,6 +244,15 @@ export default function DepartmentPage() {
     capNhatNhanSuPhongChon([]);
     capNhatPhongDuocChon(null);
   };
+
+  // Logic hiển thị Loading State
+  if (dangTai) {
+    return (
+        <div className="p-6 bg-gray-50 min-h-screen flex items-center justify-center">
+            <p className="text-xl font-semibold text-blue-600">Đang tải dữ liệu phòng ban...</p>
+        </div>
+    );
+  }
 
   return (
     <div className="p-6 bg-gray-50 min-h-screen">
